@@ -12,7 +12,7 @@ DOT_API_KEY = os.environ.get("DOT_API_KEY")
 DOT_DEVICE_ID = os.environ.get("DOT_DEVICE_ID")
 
 def load_stocks_config(filepath):
-    """外部テキストファイルから設定を読み込む (.T を自動補完)"""
+    """外部テキストファイルから設定を読み込む (.T を自動補完、#の注釈を無視)"""
     config = {}
     if not os.path.exists(filepath):
         print(f"エラー: {filepath} が見つかりません。")
@@ -20,12 +20,16 @@ def load_stocks_config(filepath):
         
     with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
-            line = line.strip()
+            line = line.strip()  # 行の前後にある不要な空白や改行を削除
+            
+            # 💡 空行または先頭が # で始まる行（注釈）はスキップ
             if not line or line.startswith("#"):
                 continue
+                
             parts = line.split(",")
             if len(parts) == 3:
                 raw_code = parts[0].strip()
+                # 日本株コード（.T）がついていなければ自動補完
                 ticker = raw_code if raw_code.endswith(".T") else f"{raw_code}.T"
                 name = parts[1].strip()
                 limit = float(parts[2].strip())
@@ -115,14 +119,14 @@ def get_stock_prices(stocks_config):
             padded_name = pad_text(item["name"], 10)
             text_lines.append(f" {err_label}         [{item['code']}] {padded_name}")
         else:
-            # 💡 1. 金額部分：一律5桁（万の桁：カンマ含め半角6文字分）を想定して右寄せ。4桁以下の場合は自動で左側に空白が入る
+            # 💡 1. 金額部分：一律5桁（万の桁：カンマ含め半角6文字分）を基準に右寄せ。4桁以下の場合は左側が空白で埋まる
             price_str = f"{item['price']:>6,.0f}円"
             
             # 2. パーセント文字列の作成 (例: "+2%" や "-12%")
             sign = "+" if item["pct_change"] > 0 else ""
             pct_text = f"({sign}{item['pct_change']}%)"
             
-            # 💡 3. パーセント部分の幅を「半角6文字」に動的パディング (例: "(+2%)  " や "(-12%) ")
+            # 💡 3. パーセント部分の幅を「半角6文字」に動的自動パディング (例: "(+2%)  " や "(-12%) ")
             # これにより、符号や桁数（1桁〜2桁）がどう変化しても、右側に続くコードの位置が完璧に一致します
             padded_pct = pad_text(pct_text, 6)
             
@@ -141,7 +145,7 @@ def get_stock_prices(stocks_config):
     return "\n".join(text_lines)
 
 def send_to_dot_device(title, message):
-    url = f"https://dot.mindreset.tech/api/authV2/open/device/{DEVICE_ID}/text"
+    url = f"https://dot.mindreset.tech/api/authV2/open/device/{DOT_DEVICE_ID}/text"
     
     payload = {
         "refreshNow": True,
