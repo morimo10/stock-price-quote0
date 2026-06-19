@@ -22,7 +22,7 @@ def load_stocks_config(filepath):
         for line in f:
             line = line.strip()  # 行の前後にある不要な空白や改行を削除
             
-            # 💡 空行または先頭が # で始まる行（注釈）はスキップ
+            # 空行または先頭が # で始まる行（注釈）はスキップ
             if not line or line.startswith("#"):
                 continue
                 
@@ -119,22 +119,20 @@ def get_stock_prices(stocks_config):
             padded_name = pad_text(item["name"], 10)
             text_lines.append(f" {err_label}         [{item['code']}] {padded_name}")
         else:
-            # 💡 1. 金額部分：一律5桁（万の桁：カンマ含め半角6文字分）を基準に右寄せ。4桁以下の場合は左側が空白で埋まる
+            # 1. 金額部分：一律5桁（万の桁：カンマ含め半角6文字分）を基準に右寄せ。4桁以下の場合は左側が空白で埋まる
             price_str = f"{item['price']:>6,.0f}円"
             
             # 2. パーセント文字列の作成 (例: "+2%" や "-12%")
             sign = "+" if item["pct_change"] > 0 else ""
             pct_text = f"({sign}{item['pct_change']}%)"
             
-            # 💡 3. パーセント部分の幅を「半角6文字」に動的自動パディング (例: "(+2%)  " や "(-12%) ")
-            # これにより、符号や桁数（1桁〜2桁）がどう変化しても、右側に続くコードの位置が完璧に一致します
+            # 3. パーセント部分の幅を「半角6文字」に動的自動パディング
             padded_pct = pad_text(pct_text, 6)
             
             # 4. コード部分
             code_str = f"[{item['code']}]"
             
-            # 💡 5. 完全に規則化された1行の左側レイアウト（一律で綺麗な半角スペース区切り）
-            # 特定のコードでの条件分岐を使わず、全銘柄共通で同じフォーマットを適用します
+            # 5. 完全に規則化された1行の左側レイアウト（一律で綺麗な半角スペース区切り）
             line_left = f" {price_str} {padded_pct} {code_str} "
 
             # 6. 左側構造とテキストファイルから読み込んだ銘柄名を結合し、画面右端（半角37マス）まで空白補正
@@ -145,6 +143,7 @@ def get_stock_prices(stocks_config):
     return "\n".join(text_lines)
 
 def send_to_dot_device(title, message):
+    # 💡 URL内の変数名を DOT_DEVICE_ID に修正しました
     url = f"https://dot.mindreset.tech/api/authV2/open/device/{DOT_DEVICE_ID}/text"
     
     payload = {
