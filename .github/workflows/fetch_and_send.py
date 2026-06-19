@@ -7,11 +7,11 @@ import yfinance as yf
 
 # --- 設定 ---
 CONFIG_FILE = "stocks.txt"
-QUOTE0_API_URL = os.environ.get("QUOTE0_API_URL")
-QUOTE0_API_TOKEN = os.environ.get("QUOTE0_API_TOKEN")
+DOT_API_KEY = os.environ.get("DOT_API_KEY")
+DOT_DEVICE_ID = os.environ.get("DOT_DEVICE_ID")
 
 def load_stocks_config(filepath):
-    """外部テキストファイルから設定を読み込む"""
+    """外部テキストファイルから設定を読み込む (.T を自動補完)"""
     config = {}
     if not os.path.exists(filepath):
         print(f"エラー: {filepath} が見つかりません。")
@@ -20,11 +20,13 @@ def load_stocks_config(filepath):
     with open(filepath, "r", encoding="utf-8") as f:
         for line in f:
             line = line.strip()
-            if not line or line.startswith("#"): # 空行やコメントをスキップ
+            if not line or line.startswith("#"):
                 continue
             parts = line.split(",")
             if len(parts) == 3:
-                ticker = parts[0].strip()
+                raw_code = parts[0].strip()
+                # .T がついていなければ自動で付与
+                ticker = raw_code if raw_code.endswith(".T") else f"{raw_code}.T"
                 name = parts[1].strip()
                 limit = float(parts[2].strip())
                 config[ticker] = {"name": name, "limit": limit}
@@ -49,14 +51,17 @@ def pad_text(text, target_width):
     return text
 
 def get_nikkei_change():
-    """日経平均の前日比（増減）を取得する"""
+    """日経平均の現在値と前日終値との増減を取得する"""
     try:
         nikkei = yf.Ticker("^N225")
-        hist = nikkei.history(period="2d") # 前日比計算のために2日分取得
+        # リアルタイム現在値と前日データを取得するため period="1d" で取得
+        # (イントラデイの最新行に現在値が入る、または history から前日終値情報がメタデータとして取れる)
+        # 確実な前日終値を取得するために2日分取得し、最新データを現在値、1つ前を前日終値として計算します
+        hist = nikkei.history(period="2d")
         if len(hist) >= 2:
-            current_price = hist['Close'].iloc[-1]
-            prev_price = hist['Close'].iloc[-2]
-            change = current_price - prev_price
+            current_price = hist['Close'].iloc[-1]  # 現在値
+            prev_close = hist['Close'].iloc[-2]     # 前日終値
+            change = current_price - prev_close
             sign = "+" if change >= 0 else ""
             return f" 日経平均:{sign}{change:,.0f}"
     except Exception as e:
@@ -67,7 +72,7 @@ def get_stock_prices(stocks_config):
     stocks_data = []
     
     for ticker, config in stocks_config.items():
-        code = ticker.split('.')[0]
+        code = ticker.split('.')[0] # 表示時は .T を除いた数字のみにする
         name = config["name"]
         limit = config["limit"]
         
@@ -103,17 +108,14 @@ def get_stock_prices(stocks_config):
         
         if item["is_error"]:
             err_label = f"{item['error_msg']:>5}円"
-            # ズレ防止のため、エラー時も超過スペース用のダミー幅（7マス）を確保
             text_lines.append(f"{err_label}        {code_str} {padded_name}")
         else:
             price_str = f"{item['price']:>6,.0f}円"
             
             if item["over_amount"] > 0:
-                # 超過分表示部分。文字の最大幅を考慮して左寄せ（例: "(+100) "）
                 over_str = pad_text(f"(+{item['over_amount']:,.0f})", 7)
                 line = f"{price_str} {over_str} {code_str} {padded_name}"
             else:
-                # 超過していない場合は、同じ幅の半角スペースで埋めて位置を維持
                 over_str = " " * 7
                 line = f"{price_str} {over_str} {code_str} {padded_name}"
                 
@@ -121,38 +123,50 @@ def get_stock_prices(stocks_config):
             
     return "\n".join(text_lines)
 
-def send_to_quote0(title, body):
-    payload = {"title": title, "body": body}
+def send_to_dot_device(title, message):
+    url = f"https://dot.mindreset.tech/api/authV2/open/device/{DEVICE_ID}/text"
+    
+    payload = {
+        "refreshNow": True,
+        "title": title,
+        "message": message,
+        "styles": {
+            "message": {
+                "fontFamily": "UnifontExMono16"
+            }
+        }
+    }
+    
     headers = {
-        "Authorization": f"Bearer {QUOTE0_API_TOKEN}",
+        "Authorization": f"Bearer {DOT_API_KEY}",
         "Content-Type": "application/json"
     }
-    response = requests.post(QUOTE0_API_URL, json=payload, headers=headers)
+    
+    response = requests.post(url, json=payload, headers=headers)
     if response.status_code == 200:
-        print("Successfully sent to Quote/0")
+        print(f"成功: {response.json().get('message')}")
     else:
-        print(f"Failed to send: {response.status_code}, {response.text}")
+        print(f"エラー {response.status_code}: {response.text}")
 
 def main():
-    # 外部設定ファイルの読み込み
     stocks_config = load_stocks_config(CONFIG_FILE)
     if not stocks_config:
-        print("設定が空のため処理を終了します。")
+        print("設定データがありません。")
         return
 
     jst = pytz.timezone('Asia/Tokyo')
     now_jst = datetime.datetime.now(jst)
     time_str = now_jst.strftime("%H:%M")
     
-    # 日経平均の増減を取得してタイトルにドッキング
+    # 日経平均の「現在値 - 前日終値」の増減を取得
     nikkei_info = get_nikkei_change()
     title = f"{time_str}の株価{nikkei_info}"
     
-    print("Fetching stock prices...")
-    body = get_stock_prices(stocks_config)
+    print("株価データを取得中...")
+    message = get_stock_prices(stocks_config)
     
-    print(f"Sending to Quote/0:\n[Title]: {title}\n[Body]:\n{body}")
-    send_to_quote0(title, body)
+    print("Dot. デバイスへ送信中...")
+    send_to_dot_device(title, message)
 
 if __name__ == "__main__":
     main()
