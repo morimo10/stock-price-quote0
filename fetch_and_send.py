@@ -8,8 +8,9 @@ import yfinance as yf
 
 # --- 設定 ---
 CONFIG_FILE = "stocks.txt"
-DOT_API_KEY = os.environ.get("DOT_API_KEY")
-DOT_DEVICE_ID = os.environ.get("DOT_DEVICE_ID")
+# 💡 ご指摘の通り、環境変数名を QUOTE0_DEVICE_ID_2 に修正しました
+DOT_API_KEY = os.environ.get("QUOTE0_API_KEY_2")
+DOT_DEVICE_ID = os.environ.get("QUOTE0_DEVICE_ID_2")
 
 def load_stocks_config(filepath):
     """外部テキストファイルから設定を読み込む (.T を自動補完、#の注釈を無視)"""
@@ -143,7 +144,7 @@ def get_stock_prices(stocks_config):
     return "\n".join(text_lines)
 
 def send_to_dot_device(title, message):
-    # 💡 URL内の変数名を DOT_DEVICE_ID に修正しました
+    # 正しく読み込まれた DOT_DEVICE_ID を用いてURLを組み立てます
     url = f"https://dot.mindreset.tech/api/authV2/open/device/{DOT_DEVICE_ID}/text"
     
     payload = {
