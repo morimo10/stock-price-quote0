@@ -109,8 +109,12 @@ def get_stock_prices(stocks_config):
             print(f"Error fetching {ticker}: {e}")
             stocks_data.append({"code": code, "name": name, "price": 0, "pct_change": 0, "over_amount": -2, "is_error": True, "error_msg": "Error"})
 
-    # 超過金額が大きい順にソート
+    # 超過金額（増加値）が大きい順にソート
     stocks_data.sort(key=lambda x: x["over_amount"], reverse=True)
+    
+    # 💡 ── 【追加】対象株が6以上の場合、増加値の高い上位5つに絞り込む ──
+    if len(stocks_data) > 5:
+        stocks_data = stocks_data[:5]
     
     text_lines = []
     for item in stocks_data:
@@ -145,7 +149,7 @@ def get_stock_prices(stocks_config):
 def send_to_dot_device(title, message):
     url = f"https://dot.mindreset.tech/api/authV2/open/device/{DOT_DEVICE_ID}/text"
     
-    # 💡 ── 送信データ内容ログの追加 ──
+    # 送信データ内容ログ
     print("\n--- [送信データ内容ログ] ───")
     print(f"■ タイトル:\n{title}")
     print(f"■ メッセージ本文:\n{message}")
