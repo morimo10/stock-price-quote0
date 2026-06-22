@@ -25,7 +25,6 @@ jobs:
           pip install requests pytz yfinance
 
       - name: Fetch and Send Stock Data
-        # 💡 ここでGitHubのSecretsを環境変数に安全にバインドします
         env:
           QUOTE0_API_KEY: ${{ secrets.QUOTE0_API_KEY }}
           QUOTE0_DEVICE_ID: ${{ secrets.QUOTE0_DEVICE_ID }}
@@ -117,24 +116,26 @@ jobs:
                           else:
                               pct_change = math.ceil(raw_pct)
                           
-                          over_amount = max(0, latest_price - limit)
+                          # 💡 【修正】単純な金額差ではなく、しきい値に対して何％超過しているかの比率（超過率）を計算
+                          over_rate = max(0.0, (latest_price - limit) / limit) if limit > 0 else 0.0
                           
                           stocks_data.append({
                               "code": code,
                               "name": name,
                               "price": latest_price,
                               "pct_change": pct_change,
-                              "over_amount": over_amount,
+                              "over_rate": over_rate,
                               "is_error": False
                           })
                       else:
-                          stocks_data.append({"code": code, "name": name, "price": 0, "pct_change": 0, "over_amount": -1, "is_error": True, "error_msg": "N/A"})
+                          stocks_data.append({"code": code, "name": name, "price": 0, "pct_change": 0, "over_rate": -1.0, "is_error": True, "error_msg": "N/A"})
                           
                   except Exception as e:
                       print(f"Error fetching {ticker}: {e}")
-                      stocks_data.append({"code": code, "name": name, "price": 0, "pct_change": 0, "over_amount": -2, "is_error": True, "error_msg": "Error"})
+                      stocks_data.append({"code": code, "name": name, "price": 0, "pct_change": 0, "over_rate": -2.0, "is_error": True, "error_msg": "Error"})
 
-              stocks_data.sort(key=lambda x: x["over_amount"], reverse=True)
+              # 💡 【修正】超過率（しきい値を超えた割合）が大きい順にソートします
+              stocks_data.sort(key=lambda x: x["over_rate"], reverse=True)
               
               if len(stocks_data) > 5:
                   stocks_data = stocks_data[:5]
@@ -206,3 +207,4 @@ jobs:
           if __name__ == "__main__":
               main()
           EOF
+          
