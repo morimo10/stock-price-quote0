@@ -8,8 +8,9 @@ import yfinance as yf
 
 # --- 設定 ---
 CONFIG_FILE = "stocks.txt"
-DOT_API_KEY = os.environ.get("QUOTE0_API_KEY_2")
-DOT_DEVICE_ID = os.environ.get("QUOTE0_DEVICE_ID_2")
+# 💡 正常動作しているお天気スクリプトと同じ環境変数名に修正しました
+DOT_API_KEY = os.environ.get("QUOTE0_API_KEY")
+DOT_DEVICE_ID = os.environ.get("QUOTE0_DEVICE_ID")
 
 def load_stocks_config(filepath):
     """外部テキストファイルから設定を読み込む (.T を自動補完、#の注釈を無視)"""
@@ -125,7 +126,7 @@ def get_stock_prices(stocks_config):
             sign = "+" if item["pct_change"] > 0 else ""
             pct_text = f"({sign}{item['pct_change']}%)"
             padded_pct = pad_text(pct_text, 6)
-            code_str = f"\[{item['code']}\]"
+            code_str = f"[{item['code']}]"
             
             line_left = f" {price_str} {padded_pct} {code_str} "
             full_line_content = f"{line_left}{item['name']}"
@@ -159,7 +160,7 @@ def send_to_dot_device(title, message):
     }
     
     response = requests.post(url, json=payload, headers=headers)
-    if response.status_code == 200:
+    if response.status_code in [200, 201]:
         print(f"成功: {response.json().get('message')}")
     else:
         print(f"エラー {response.status_code}: {response.text}")
