@@ -8,8 +8,8 @@ import yfinance as yf
 
 # --- 設定 ---
 CONFIG_FILE = "stocks.txt"
-DOT_API_KEY = os.environ.get("QUOTE0_API_KEY_2")
-DOT_DEVICE_ID = os.environ.get("QUOTE0_DEVICE_ID_2")
+DOT_API_KEY = os.environ.get("QUOTE0_API_KEY")
+DOT_DEVICE_ID = os.environ.get("QUOTE0_DEVICE_ID")
 
 def load_stocks_config(filepath):
     """外部テキストファイルから設定を読み込む (.T を自動補完、#の注釈を無視)"""
