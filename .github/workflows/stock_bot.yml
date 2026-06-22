@@ -100,42 +100,42 @@ jobs:
               for ticker, config in stocks_config.items():
                   code = ticker.split('.')[0]
                   name = config["name"]
-                  limit = config["limit"]
+                  limit = config["limit"]  # stocks.txtに設定された基準値
                   
                   try:
                       stock = yf.Ticker(ticker)
-                      todays_data = stock.history(period="2d")
+                      todays_data = stock.history(period="1d")
                       
-                      if len(todays_data) >= 2:
+                      if len(todays_data) >= 1:
                           latest_price = todays_data['Close'].iloc[-1]
-                          prev_close = todays_data['Close'].iloc[-2]
                           
-                          raw_pct = ((latest_price - prev_close) / prev_close) * 100
-                          if raw_pct >= 0:
-                              pct_change = math.floor(raw_pct)
+                          # 💡 【修正】基準値に対する現在値の増減率（％）を計算
+                          if limit > 0:
+                              raw_ratio = ((latest_price - limit) / limit) * 100
+                              # 正の数の時は切り捨て、負の数の時は切り上げして整数化
+                              if raw_ratio >= 0:
+                                  target_pct = math.floor(raw_ratio)
+                              else:
+                                  target_pct = math.ceil(raw_ratio)
                           else:
-                              pct_change = math.ceil(raw_pct)
-                          
-                          # 💡 【修正】単純な金額差ではなく、しきい値に対して何％超過しているかの比率（超過率）を計算
-                          over_rate = max(0.0, (latest_price - limit) / limit) if limit > 0 else 0.0
+                              target_pct = 0
                           
                           stocks_data.append({
                               "code": code,
                               "name": name,
                               "price": latest_price,
-                              "pct_change": pct_change,
-                              "over_rate": over_rate,
+                              "target_pct": target_pct,  # 基準値からの増減率
                               "is_error": False
                           })
                       else:
-                          stocks_data.append({"code": code, "name": name, "price": 0, "pct_change": 0, "over_rate": -1.0, "is_error": True, "error_msg": "N/A"})
+                          stocks_data.append({"code": code, "name": name, "price": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
                           
                   except Exception as e:
                       print(f"Error fetching {ticker}: {e}")
-                      stocks_data.append({"code": code, "name": name, "price": 0, "pct_change": 0, "over_rate": -2.0, "is_error": True, "error_msg": "Error"})
+                      stocks_data.append({"code": code, "name": name, "price": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
 
-              # 💡 【修正】超過率（しきい値を超えた割合）が大きい順にソートします
-              stocks_data.sort(key=lambda x: x["over_rate"], reverse=True)
+              # 💡 【修正】基準値からの増減率（target_pct）が大きい順にソートします
+              stocks_data.sort(key=lambda x: x["target_pct"], reverse=True)
               
               if len(stocks_data) > 5:
                   stocks_data = stocks_data[:5]
@@ -150,8 +150,10 @@ jobs:
                       text_lines.append(line)
                   else:
                       price_str = f"{item['price']:>6,.0f}円"
-                      sign = "+" if item["pct_change"] > 0 else ""
-                      pct_text = f"({sign}{item['pct_change']}%)"
+                      sign = "+" if item["target_pct"] > 0 else ""
+                      pct_text = f"({sign}{item['target_pct']}%）" if item["target_pct"] != 0 else "(0%)"
+                      
+                      # 💡 カッコを含めてきっちり半角6マス幅にパディング
                       padded_pct = pad_text(pct_text, 6)
                       code_str = f"[{item['code']}]"
                       
@@ -207,4 +209,3 @@ jobs:
           if __name__ == "__main__":
               main()
           EOF
-          
