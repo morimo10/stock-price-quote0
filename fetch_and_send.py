@@ -8,7 +8,7 @@ import yfinance as yf
 
 # --- 設定 ---
 CONFIG_FILE = "stocks.txt"
-# 💡 正常動作しているお天気スクリプトと同じ環境変数名に修正しました
+# 正常動作しているお天気スクリプトと完全に同じ変数名
 DOT_API_KEY = os.environ.get("QUOTE0_API_KEY")
 DOT_DEVICE_ID = os.environ.get("QUOTE0_DEVICE_ID")
 
@@ -143,15 +143,12 @@ def send_to_dot_device(title, message):
     print(f"■ メッセージ本文:\n{message}")
     print("────────────────────────────\n")
     
+    # 💡 お天気スクリプトと完全に同じペイロード（style）構造に合わせました
     payload = {
         "refreshNow": True,
         "title": title,
         "message": message,
-        "styles": {
-            "message": {
-                "fontFamily": "UnifontExMono16"
-            }
-        }
+        "style": "UnifontExMono16"
     }
     
     headers = {
@@ -159,7 +156,7 @@ def send_to_dot_device(title, message):
         "Content-Type": "application/json"
     }
     
-    response = requests.post(url, json=payload, headers=headers)
+    response = requests.post(url, headers=headers, json=payload)
     if response.status_code in [200, 201]:
         print(f"成功: {response.json().get('message')}")
     else:
