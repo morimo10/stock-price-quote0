@@ -90,7 +90,8 @@ jobs:
                       prev_close = hist['Close'].iloc[-2]
                       change = current_price - prev_close
                       sign = "+" if change >= 0 else ""
-                      return f" 日経平均:{sign}{change:,.0f}"
+                      # 💡 表示幅を削るため「日経:」に短縮
+                      return f" 日経:{sign}{change:,.0f}"
               except Exception as e:
                   print(f"日経平均の取得に失敗: {e}")
               return ""
@@ -142,7 +143,6 @@ jobs:
               for item in stocks_data:
                   if item["is_error"]:
                       err_label = f"  {item['error_msg']:>3}円"
-                      # 💡 会社コードの表記を削除
                       line_left = f" {err_label}        "
                       full_line_content = f"{line_left}{item['name']}"
                       line = pad_text(full_line_content, 37)
@@ -154,7 +154,6 @@ jobs:
                       
                       padded_pct = pad_text(pct_text, 6)
                       
-                      # 💡 会社コードの表記を削除
                       line_left = f" {price_str} {padded_pct}  "
                       full_line_content = f"{line_left}{item['name']}"
                       line = pad_text(full_line_content, 37)
@@ -199,7 +198,8 @@ jobs:
               time_str = now_jst.strftime("%H:%M")
               
               nikkei_info = get_nikkei_change()
-              title = f"{time_str}の株価{nikkei_info}"
+              # 💡 タイトルを「15:42 日経:-3,261」のように大幅短縮
+              title = f"{time_str}{nikkei_info}"
               
               message = get_stock_prices(stocks_config)
               send_to_dot_device(title, message)
