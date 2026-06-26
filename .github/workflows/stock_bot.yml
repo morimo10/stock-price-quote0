@@ -90,8 +90,8 @@ jobs:
                       prev_close = hist['Close'].iloc[-2]
                       change = current_price - prev_close
                       sign = "+" if change >= 0 else ""
-                      # 💡 表示幅を削るため「日経:」に短縮
-                      return f" 日経平均:{sign}{change:,.0f}"
+                      # 💡 「日経平均:」に変更し、末尾に「円」を付与
+                      return f" 日経平均:{sign}{change:,.0f}円"
               except Exception as e:
                   print(f"日経平均の取得に失敗: {e}")
               return ""
@@ -198,7 +198,7 @@ jobs:
               time_str = now_jst.strftime("%H:%M")
               
               nikkei_info = get_nikkei_change()
-              # 💡 タイトルを「15:42 日経:-3,261」のように大幅短縮
+              # 💡 タイトル例: 「15:42 日経平均:-3,261円」
               title = f"{time_str}{nikkei_info}"
               
               message = get_stock_prices(stocks_config)
