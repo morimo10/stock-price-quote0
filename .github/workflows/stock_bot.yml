@@ -27,8 +27,8 @@ jobs:
 
       - name: Fetch and Send Stock Data
         env:
-          QUOTE0_API_KEY: ${{ secrets.QUOTE0_API_KEY }}
-          QUOTE0_DEVICE_ID: ${{ secrets.QUOTE0_DEVICE_ID }}
+          QUOTE0_API_KEY: ${{ secrets.QUOTE_API_KEY }}
+          QUOTE0_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_ID }}
         run: |
           python - << 'EOF'
           import os
@@ -40,8 +40,8 @@ jobs:
           import yfinance as yf
 
           CONFIG_FILE = "stocks.txt"
-          DOT_API_KEY = os.environ.get("QUOTE0_API_KEY")
-          DOT_DEVICE_ID = os.environ.get("QUOTE0_DEVICE_ID")
+          DOT_API_KEY = os.environ.get("QUOTE_API_KEY")
+          DOT_DEVICE_ID = os.environ.get("QUOTE_DEVICE_ID")
 
           def load_stocks_config(filepath):
               """外部テキストファイルから設定を読み込む"""
