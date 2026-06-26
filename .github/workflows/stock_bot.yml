@@ -90,7 +90,6 @@ jobs:
                       prev_close = hist['Close'].iloc[-2]
                       change = current_price - prev_close
                       sign = "+" if change >= 0 else ""
-                      # 💡 「日経平均:」に変更し、末尾に「円」を付与
                       return f" 日経平均:{sign}{change:,.0f}円"
               except Exception as e:
                   print(f"日経平均の取得に失敗: {e}")
@@ -111,8 +110,11 @@ jobs:
                       if len(todays_data) >= 1:
                           latest_price = todays_data['Close'].iloc[-1]
                           
+                          # 💡 時価 - 設定値 で増減金額を計算
+                          diff_val = latest_price - limit
+                          
                           if limit > 0:
-                              raw_ratio = ((latest_price - limit) / limit) * 100
+                              raw_ratio = (diff_val / limit) * 100
                               if raw_ratio >= 0:
                                   target_pct = math.floor(raw_ratio)
                               else:
@@ -123,16 +125,16 @@ jobs:
                           stocks_data.append({
                               "code": code,
                               "name": name,
-                              "price": latest_price,
+                              "diff": diff_val,  # 増減金額を保持
                               "target_pct": target_pct,
                               "is_error": False
                           })
                       else:
-                          stocks_data.append({"code": code, "name": name, "price": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
+                          stocks_data.append({"code": code, "name": name, "diff": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
                           
                   except Exception as e:
                       print(f"Error fetching {ticker}: {e}")
-                      stocks_data.append({"code": code, "name": name, "price": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
+                      stocks_data.append({"code": code, "name": name, "diff": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
 
               stocks_data.sort(key=lambda x: x["target_pct"], reverse=True)
               
@@ -142,19 +144,22 @@ jobs:
               text_lines = []
               for item in stocks_data:
                   if item["is_error"]:
-                      err_label = f"  {item['error_msg']:>3}円"
-                      line_left = f" {err_label}        "
+                      # エラー時も7桁幅を維持して名前の位置を揃える
+                      err_label = f"{item['error_msg']:>6} "
+                      line_left = f" {err_label} "
                       full_line_content = f"{line_left}{item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
                   else:
-                      price_str = f"{item['price']:>6,.0f}円"
-                      sign = "+" if item["target_pct"] > 0 else ""
-                      pct_text = f"({sign}{item['target_pct']}%）" if item["target_pct"] != 0 else "(0%)"
+                      # 💡 符号付きの増減金額文字列を作成（例: +1,250、-350、0）
+                      sign = "+" if item["diff"] > 0 else ""
+                      diff_str = f"{sign}{item['diff']:,.0f}円" if item["diff"] != 0 else "0円"
                       
-                      padded_pct = pad_text(pct_text, 6)
+                      # 💡 金額部分を最大7桁で右詰めし、末尾にスペース2つを開ける
+                      padded_diff = f"{diff_str:>7}"
                       
-                      line_left = f" {price_str} {padded_pct}  "
+                      # 💡 シンプルに「金額」と「名前」のみで構成
+                      line_left = f" {padded_diff}  "
                       full_line_content = f"{line_left}{item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
@@ -198,7 +203,6 @@ jobs:
               time_str = now_jst.strftime("%H:%M")
               
               nikkei_info = get_nikkei_change()
-              # 💡 タイトル例: 「15:42 日経平均:-3,261円」
               title = f"{time_str}{nikkei_info}"
               
               message = get_stock_prices(stocks_config)
