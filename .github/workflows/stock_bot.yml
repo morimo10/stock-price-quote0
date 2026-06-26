@@ -27,8 +27,8 @@ jobs:
 
       - name: Fetch and Send Stock Data
         env:
-          QUOTE0_API_KEY: ${{ secrets.QUOTE_API_KEY }}
-          QUOTE0_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_KEY }}
+          QUOTE_API_KEY: ${{ secrets.QUOTE_API_KEY }}
+          QUOTE_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_KEY }}
         run: |
           python - << 'EOF'
           import os
