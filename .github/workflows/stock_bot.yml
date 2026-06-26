@@ -91,7 +91,7 @@ jobs:
                       change = current_price - prev_close
                       sign = "+" if change >= 0 else ""
                       # 💡 表示幅を削るため「日経:」に短縮
-                      return f" 日経:{sign}{change:,.0f}"
+                      return f" 日経平均:{sign}{change:,.0f}"
               except Exception as e:
                   print(f"日経平均の取得に失敗: {e}")
               return ""
