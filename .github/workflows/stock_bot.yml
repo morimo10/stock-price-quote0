@@ -2,9 +2,9 @@ name: Send Stock Price to Dot Device (Single File Version)
 
 on:
   schedule:
-    # 平日の日本時間 09:00〜15:59 の間、10分おきに自動実行
-    - cron: '*/10 0-6 * * 1-5'
-    #- cron: '0 0 1 1 *'
+    # 平日の日本時間 09:00〜15:59 の間、15分おきに自動実行
+    #- cron: '*/15 0-6 * * 1-5'
+    - cron: '0 0 1 1 *'
   workflow_dispatch: # 手動実行ボタンを有効化
 
 jobs:
@@ -110,7 +110,6 @@ jobs:
                       if len(todays_data) >= 1:
                           latest_price = todays_data['Close'].iloc[-1]
                           
-                          # 💡 時価 - 設定値 で増減金額を計算
                           diff_val = latest_price - limit
                           
                           if limit > 0:
@@ -125,7 +124,7 @@ jobs:
                           stocks_data.append({
                               "code": code,
                               "name": name,
-                              "diff": diff_val,  # 増減金額を保持
+                              "diff": diff_val,
                               "target_pct": target_pct,
                               "is_error": False
                           })
@@ -144,21 +143,17 @@ jobs:
               text_lines = []
               for item in stocks_data:
                   if item["is_error"]:
-                      # エラー時も7桁幅を維持して名前の位置を揃える
                       err_label = f"{item['error_msg']:>6} "
                       line_left = f" {err_label} "
                       full_line_content = f"{line_left}{item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
                   else:
-                      # 💡 符号付きの増減金額文字列を作成（例: +1,250、-350、0）
                       sign = "+" if item["diff"] > 0 else ""
                       diff_str = f"{sign}{item['diff']:,.0f}円" if item["diff"] != 0 else "0円"
                       
-                      # 💡 金額部分を最大7桁で右詰めし、末尾にスペース2つを開ける
                       padded_diff = f"{diff_str:>7}"
                       
-                      # 💡 シンプルに「金額」と「名前」のみで構成
                       line_left = f" {padded_diff}  "
                       full_line_content = f"{line_left}{item['name']}"
                       line = pad_text(full_line_content, 37)
@@ -174,11 +169,22 @@ jobs:
               print(f"■ メッセージ本文:\n{message}")
               print("────────────────────────────\n")
               
+              # 💡 マニュアルの指定通り、"styles" パラメータに統合してフォントサイズを指定
               payload = {
                   "refreshNow": True,
                   "title": title,
                   "message": message,
-                  "style": "UnifontExMono16"
+                  "styles": {
+                      "title": {
+                          "fontFamily": "ChillDuanSans",
+                          "fontSize": 20,          # 💡 タイトルを小さめ(20px)に設定
+                          "fontWeight": 700
+                      },
+                      "message": {
+                          "fontFamily": "UnifontExMono16",  # 💡 本文は等幅フォントを維持
+                          "fontSize": 16
+                      }
+                  }
               }
               
               headers = {
