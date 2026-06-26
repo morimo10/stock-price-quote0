@@ -101,7 +101,7 @@ jobs:
               for ticker, config in stocks_config.items():
                   code = ticker.split('.')[0]
                   name = config["name"]
-                  limit = config["limit"]  # stocks.txtに設定された基準値
+                  limit = config["limit"]
                   
                   try:
                       stock = yf.Ticker(ticker)
@@ -110,10 +110,8 @@ jobs:
                       if len(todays_data) >= 1:
                           latest_price = todays_data['Close'].iloc[-1]
                           
-                          # 💡 【修正】基準値に対する現在値の増減率（％）を計算
                           if limit > 0:
                               raw_ratio = ((latest_price - limit) / limit) * 100
-                              # 正の数の時は切り捨て、負の数の時は切り上げして整数化
                               if raw_ratio >= 0:
                                   target_pct = math.floor(raw_ratio)
                               else:
@@ -125,7 +123,7 @@ jobs:
                               "code": code,
                               "name": name,
                               "price": latest_price,
-                              "target_pct": target_pct,  # 基準値からの増減率
+                              "target_pct": target_pct,
                               "is_error": False
                           })
                       else:
@@ -135,7 +133,6 @@ jobs:
                       print(f"Error fetching {ticker}: {e}")
                       stocks_data.append({"code": code, "name": name, "price": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
 
-              # 💡 【修正】基準値からの増減率（target_pct）が大きい順にソートします
               stocks_data.sort(key=lambda x: x["target_pct"], reverse=True)
               
               if len(stocks_data) > 5:
@@ -145,7 +142,8 @@ jobs:
               for item in stocks_data:
                   if item["is_error"]:
                       err_label = f"  {item['error_msg']:>3}円"
-                      line_left = f" {err_label}        [{item['code']}] "
+                      # 💡 会社コードの表記を削除
+                      line_left = f" {err_label}        "
                       full_line_content = f"{line_left}{item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
@@ -154,11 +152,10 @@ jobs:
                       sign = "+" if item["target_pct"] > 0 else ""
                       pct_text = f"({sign}{item['target_pct']}%）" if item["target_pct"] != 0 else "(0%)"
                       
-                      # 💡 カッコを含めてきっちり半角6マス幅にパディング
                       padded_pct = pad_text(pct_text, 6)
-                      code_str = f"[{item['code']}]"
                       
-                      line_left = f" {price_str} {padded_pct} {code_str} "
+                      # 💡 会社コードの表記を削除
+                      line_left = f" {price_str} {padded_pct}  "
                       full_line_content = f"{line_left}{item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
