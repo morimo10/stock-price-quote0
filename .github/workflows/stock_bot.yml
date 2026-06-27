@@ -1,319 +1,219 @@
-name: Update Weather and Clothing for Dot V2 (Pure JMA Hourly Eco Version)
+name: Send Stock Price to Dot Device (Single File Version)
 
 on:
   schedule:
-    # 日本時間の05:00〜21:59の間、15分おきに実行命令を出します（GitHubの遅延対策）
-    - cron: '*/15 0-11,20-23 * * *'
-  workflow_dispatch:
+    # 平日の日本時間 09:00〜15:59 の間、15分おきに自動実行
+    #- cron: '*/15 0-6 * * 1-5'
+    - cron: '0 0 1 1 *'
+  workflow_dispatch: # 手動実行ボタンを有効化
 
 jobs:
-  update-weather:
+  run-stock-bot:
     runs-on: ubuntu-latest
+
     steps:
-    - name: Restore Last Run Hour and Temp Cache
-      uses: actions/cache@v4
-      with:
-        path: |
-          last_run_hour.txt
-          weather_history.json
-        key: weather-run-cache-${{ github.run_id }}
-        restore-keys: |
-          weather-run-cache-
+      - name: Checkout Repository
+        uses: actions/checkout@v4
 
-    - name: Set up Python
-      uses: actions/setup-python@v5
-      with:
-        python-version: '3.x'
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
 
-    - name: Install dependencies
-      run: |
-        python -m pip install --upgrade pip
-        pip install requests
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests pytz yfinance
 
-    - name: Generate and Push to Dot API
-      env:
-        QUOTE0_API_KEY: ${{ secrets.QUOTE0_API_KEY }}
-        QUOTE0_DEVICE_ID: ${{ secrets.QUOTE0_DEVICE_ID }}
-      run: |
-        python - << 'EOF'
-        import os
-        import json
-        import requests
-        from datetime import datetime, timedelta, timezone
+      - name: Fetch and Send Stock Data
+        env:
+          QUOTE_API_KEY: ${{ secrets.QUOTE_API_KEY }}
+          QUOTE_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_KEY }}
+        run: |
+          python - << 'EOF'
+          import os
+          import datetime
+          import pytz
+          import requests
+          import unicodedata
+          import math
+          import yfinance as yf
 
-        API_KEY = os.environ.get("QUOTE0_API_KEY")
-        DEVICE_ID = os.environ.get("QUOTE0_DEVICE_ID")
+          CONFIG_FILE = "stocks.txt"
+          DOT_API_KEY = os.environ.get("QUOTE_API_KEY")
+          DOT_DEVICE_ID = os.environ.get("QUOTE_DEVICE_ID")
 
-        JMA_FORECAST_URL = "https://www.jma.go.jp/bosai/forecast/data/forecast/016000.json"
-        DOT_API_URL = f"https://dot.mindreset.tech/api/authV2/open/device/{DEVICE_ID}/text"
+          def load_stocks_config(filepath):
+              """外部テキストファイルから設定を読み込む"""
+              config = {}
+              if not os.path.exists(filepath):
+                  print(f"エラー: {filepath} が見つかりません。")
+                  return config
+                  
+              with open(filepath, "r", encoding="utf-8") as f:
+                  for line in f:
+                      line = line.strip()
+                      if not line or line.startswith("#"):
+                          continue
+                          
+                      parts = line.split(",")
+                      if len(parts) == 3:
+                          raw_code = parts[0].strip()
+                          ticker = raw_code if raw_code.endswith(".T") else f"{raw_code}.T"
+                          name = parts[1].strip()
+                          limit = float(parts[2].strip())
+                          config[ticker] = {"name": name, "limit": limit}
+              return config
 
-        def get_advanced_weather_symbol(text, max_prob):
-            if not text: return "☁"
-            if max_prob < 30:
-                text = text.replace("雨", "").replace("雪", "")
-            if "晴" in text and "曇" in text:
-                return "☀→☁" if text.find("晴") < text.find("曇") else "☁→☀"
-            elif "晴" in text and "雨" in text:
-                return "☀→☔" if text.find("晴") < text.find("雨") else "☔→☀"
-            elif "曇" in text and "雨" in text:
-                return "☁→☔" if text.find("曇") < text.find("雨") else "☔→☁"
-            elif "曇" in text and "雪" in text:
-                return "☁→☃" if text.find("曇") < text.find("雪") else "☃→☁"
-            elif "雨" in text and "雪" in text:
-                return "☔→☃" if text.find("雨") < text.find("雪") else "☃→☔"
-            if "晴" in text: return "☀"
-            elif "曇" in text: return "☁"
-            elif "雨" in text: return "☔"
-            elif "雪" in text: return "☃"
-            return "☁"
+          def get_display_width(text):
+              count = 0
+              for c in text:
+                  if unicodedata.east_asian_width(c) in 'FWA':
+                      count += 2
+                  else:
+                      count += 1
+              return count
 
-        def code_to_symbol(code):
-            if not code or str(code).strip() == "": return "☁"
-            try:
-                c = int(code)
-                if 100 <= c < 200: return "☀"
-                if 200 <= c < 300: return "☁"
-                if 300 <= c < 400: return "☔"
-                if 400 <= c < 500: return "☃"
-            except:
-                pass
-            return "☁"
+          def pad_text(text, target_width):
+              current_width = get_display_width(text)
+              padding_needed = target_width - current_width
+              if padding_needed > 0:
+                  return text + (" " * padding_needed)
+              return text
 
-        def get_clothing_advice(temp):
-            if temp is None: return " 不明？"
-            if temp >= 30: return " Ｔシャツ"
-            elif temp >= 25: return " 半袖シャツ"
-            elif temp >= 20: return " 長袖シャツ"
-            elif temp >= 15: return " ジャケット"
-            elif temp >= 10: return " コート"
-            else: return " ダウン"
+          def get_nikkei_change():
+              try:
+                  nikkei = yf.Ticker("^N225")
+                  hist = nikkei.history(period="2d")
+                  if len(hist) >= 2:
+                      current_price = hist['Close'].iloc[-1]
+                      prev_close = hist['Close'].iloc[-2]
+                      change = current_price - prev_close
+                      sign = "+" if change >= 0 else ""
+                      return f" 日経平均:{sign}{change:,.0f}円"
+              except Exception as e:
+                  print(f"日経平均の取得に失敗: {e}")
+              return ""
 
-        try:
-            res = requests.get(JMA_FORECAST_URL).json()
-            
-            jst = timezone(timedelta(hours=9))
-            now_utc = datetime.now(timezone.utc)
-            now = now_utc.astimezone(jst)
-            current_hour = now.hour
-            
-            if 17 <= current_hour <= 23:
-                is_tomorrow_data = True
-                label_head = "明日"
-            else:
-                is_tomorrow_data = False
-                label_head = "今日"
-            
-            day_idx = 1 if is_tomorrow_data else 0
-            today_date_str = now.strftime("%Y-%m-%d")
-            target_date_str = (now + timedelta(days=1)).strftime("%Y-%m-%d") if is_tomorrow_data else today_date_str
+          def get_stock_prices(stocks_config):
+              stocks_data = []
+              
+              for ticker, config in stocks_config.items():
+                  code = ticker.split('.')[0]
+                  name = config["name"]
+                  limit = config["limit"]
+                  
+                  try:
+                      stock = yf.Ticker(ticker)
+                      todays_data = stock.history(period="1d")
+                      
+                      if len(todays_data) >= 1:
+                          latest_price = todays_data['Close'].iloc[-1]
+                          
+                          diff_val = latest_price - limit
+                          
+                          if limit > 0:
+                              raw_ratio = (diff_val / limit) * 100
+                              if raw_ratio >= 0:
+                                  target_pct = math.floor(raw_ratio)
+                              else:
+                                  target_pct = math.ceil(raw_ratio)
+                          else:
+                              target_pct = 0
+                          
+                          stocks_data.append({
+                              "code": code,
+                              "name": name,
+                              "diff": diff_val,
+                              "target_pct": target_pct,
+                              "is_error": False
+                          })
+                      else:
+                          stocks_data.append({"code": code, "name": name, "diff": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
+                          
+                  except Exception as e:
+                      print(f"Error fetching {ticker}: {e}")
+                      stocks_data.append({"code": code, "name": name, "diff": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
 
-            # --- GitHubのキャッシュファイルを用いた二重実行チェック ---
-            current_hour_str = now.strftime("%Y-%m-%d-%H")
-            cache_file = "last_run_hour.txt"
-            history_file = "weather_history.json"
-            
-            print("--- Actionsキャッシュによる二重実行チェック中 ---")
-            if os.path.exists(cache_file):
-                with open(cache_file, "r") as f:
-                    last_run_hour = f.read().strip()
-                if last_run_hour == current_hour_str:
-                    print(f"判別結果: すでに【{now.strftime('%H:00')}時台】の最初の実行は完了しています。")
-                    print("送信をスキップ（パス）して正常終了します。")
-                    exit(0)
-            
-            print(f"判別結果: 新しい時間帯【{now.strftime('%H:00')}時台】の初実行です。処理を進めます。")
+              stocks_data.sort(key=lambda x: x["target_pct"], reverse=True)
+              
+              if len(stocks_data) > 5:
+                  stocks_data = stocks_data[:5]
+              
+              text_lines = []
+              for item in stocks_data:
+                  if item["is_error"]:
+                      err_label = f"{item['error_msg']:>6} "
+                      line_left = f" {err_label} "
+                      full_line_content = f"{line_left}{item['name']}"
+                      line = pad_text(full_line_content, 37)
+                      text_lines.append(line)
+                  else:
+                      sign = "+" if item["diff"] > 0 else ""
+                      diff_str = f"{sign}{item['diff']:,.0f}円" if item["diff"] != 0 else "0円"
+                      
+                      padded_diff = f"{diff_str:>7}"
+                      
+                      line_left = f" {padded_diff}  "
+                      full_line_content = f"{line_left}{item['name']}"
+                      line = pad_text(full_line_content, 37)
+                      text_lines.append(line)
+                      
+              return "\n".join(text_lines)
 
-            # --- 1. 1日単位の基本天気予報 (timeSeries[0]) ---
-            base_series = res[0]['timeSeries'][0]
-            weather_areas = base_series['areas']
-            sapporo_weather = next((a for a in weather_areas if a['area']['code'] == '016010'), weather_areas[0])
-            weather_text = sapporo_weather['weathers'][day_idx]
+          def send_to_dot_device(title, message):
+              url = f"https://dot.mindreset.tech/api/authV2/open/device/{DOT_DEVICE_ID}/text"
+              
+              print("\n--- [送信データ内容ログ] ───")
+              print(f"■ タイトル:\n{title}")
+              print(f"■ メッセージ本文:\n{message}")
+              print("────────────────────────────\n")
+              
+              # 💡 マニュアルの指定通り、"styles" パラメータに統合してフォントサイズを指定
+              payload = {
+                  "refreshNow": True,
+                  "title": title,
+                  "message": message,
+                  "styles": {
+                      "title": {
+                          "fontFamily": "ChillDuanSans",
+                          "fontSize": 20,          # 💡 タイトルを小さめ(20px)に設定
+                          "fontWeight": 700
+                      },
+                      "message": {
+                          "fontFamily": "UnifontExMono16",  # 💡 本文は等幅フォントを維持
+                          "fontSize": 16
+                      }
+                  }
+              }
+              
+              headers = {
+                  "Authorization": f"Bearer {DOT_API_KEY}",
+                  "Content-Type": "application/json"
+              }
+              
+              response = requests.post(url, headers=headers, json=payload)
+              if response.status_code in [200, 201]:
+                  print(f"成功: {response.json().get('message')}")
+              else:
+                  print(f"エラー {response.status_code}: {response.text}")
 
-            # --- 2. 3時間ごとの時系列予報 (timeSeries[1]) ---
-            hourly_series = res[0]['timeSeries'][1]
-            hourly_times = hourly_series['timeDefines']
-            hourly_areas = hourly_series['areas']
-            sapporo_hourly = next((a for a in hourly_areas if a['area']['code'] == '016010'), hourly_areas[0])
-            
-            hourly_weather_codes = sapporo_hourly.get('weatherCode', [])
-            hourly_pops = sapporo_hourly.get('pops', [])
+          def main():
+              stocks_config = load_stocks_config(CONFIG_FILE)
+              if not stocks_config:
+                  print("設定データがありません。")
+                  return
 
-            # --- 3. 降水確率の計算 ---
-            day_pops = []
-            for t_str, pop in zip(hourly_times, hourly_pops):
-                dt_parsed = datetime.fromisoformat(t_str).astimezone(jst)
-                if dt_parsed.strftime("%Y-%m-%d") == target_date_str and str(pop).strip() != "":
-                    day_pops.append(int(pop))
-            
-            max_prob = max(day_pops) if day_pops else 0
-            prob_str = f"{max_prob}%"
-            umbrella_mark = "☔" if max_prob >= 50 else ("☂" if max_prob >= 30 else "")
+              jst = pytz.timezone('Asia/Tokyo')
+              now_jst = datetime.datetime.now(jst)
+              time_str = now_jst.strftime("%H:%M")
+              
+              nikkei_info = get_nikkei_change()
+              title = f"{time_str}{nikkei_info}"
+              
+              message = get_stock_prices(stocks_config)
+              send_to_dot_device(title, message)
 
-            # タイトル用お天気マークの生成
-            day_symbol = get_advanced_weather_symbol(weather_text, max_prob)
-            title_text = f"{label_head}の札幌市中央区: {day_symbol}"
-
-            # --- 4. 最高・最低気温の取得 (timeSeries[2]) ---
-            temp_series = res[0]['timeSeries'][2]
-            temp_areas = temp_series['areas']
-            sapporo_temp = next((a for a in temp_areas if a['area']['code'] == '016010'), temp_areas[0])
-            temps = sapporo_temp['temps']
-            
-            tmin_raw = temps[2] if is_tomorrow_data and len(temps) >= 4 else (temps[0] if len(temps) > 0 else "14")
-            tmax_raw = temps[3] if is_tomorrow_data and len(temps) >= 4 else (temps[1] if len(temps) > 1 else "25")
-
-            if not is_tomorrow_data and (not tmin_raw or str(tmin_raw).strip() == "" or tmin_raw == tmax_raw):
-                try: tmin_raw = res[1]['timeSeries'][1]['areas'][0]['tempsMin'][0]
-                except: tmin_raw = "14"
-            if not tmax_raw or str(tmax_raw).strip() == "": tmax_raw = "25"
-
-            tmin_cleaned = str(tmin_raw).strip()
-            tmax_cleaned = str(tmax_raw).strip()
-            
-            t_min_num = int(tmin_cleaned) if tmin_cleaned and tmin_cleaned.isdigit() else 14
-            t_max_num = int(tmax_cleaned) if tmax_cleaned and tmax_cleaned.isdigit() else 25
-
-            # --- 5. キャッシュを使った厳密な前日比計算（バグ修正版） ---
-            diff_str = "(?)"
-            history_data = {}
-            if os.path.exists(history_file):
-                try:
-                    with open(history_file, "r") as f:
-                        history_data = json.load(f)
-                except:
-                    pass
-
-            if is_tomorrow_data:
-                # 【明日予報モード】明日の最高気温 - 今日の最高気温（キャッシュから取得）
-                if today_date_str in history_data:
-                    today_max = history_data[today_date_str]
-                    diff = t_max_num - today_max
-                    diff_str = f"(+{diff})" if diff > 0 else (f"({diff})" if diff < 0 else "(±0)")
-                else:
-                    # 今日昼のデータがキャッシュに残っていれば、予報データのセーフティフォールバック
-                    try:
-                        # 17時直後でインデックスがズレていなければtemps[1]を試す
-                        if len(temps) >= 4 and str(temps[1]).isdigit() and int(temps[1]) != t_max_num:
-                            diff = t_max_num - int(temps[1])
-                            diff_str = f"(+{diff})" if diff > 0 else (f"({diff})" if diff < 0 else "(±0)")
-                    except:
-                        pass
-            else:
-                # 【今日予報モード】今日の最高気温 - 昨日の最高気温（キャッシュから取得）
-                yesterday_str = (now - timedelta(days=1)).strftime("%Y-%m-%d")
-                if yesterday_str in history_data:
-                    yesterday_max = history_data[yesterday_str]
-                    diff = t_max_num - yesterday_max
-                    diff_str = f"(+{diff})" if diff > 0 else (f"({diff})" if diff < 0 else "(±0)")
-
-            # 今回のターゲット日付の最高気温データを履歴に保存
-            history_data[target_date_str] = t_max_num
-            # 17時以降なら、確定した「今日の最高気温」も（消えていれば）直前の予報値ベースで履歴を補完
-            if is_tomorrow_data and today_date_str not in history_data:
-                if len(temps) >= 4: history_data[today_date_str] = int(temps[1])
-
-            clean_history = {k: v for k, v in history_data.items() if (now - datetime.strptime(k, "%Y-%m-%d").replace(tzinfo=jst)).days <= 3}
-            with open(history_file, "w") as f:
-                json.dump(clean_history, f)
-
-            # --- 6. 時系列データの個別マッピング処理 ---
-            def find_hourly_data(target_hour_str):
-                if hourly_weather_codes and hourly_pops:
-                    for t_str, code, pop in zip(hourly_times, hourly_weather_codes, hourly_pops):
-                        dt_parsed = datetime.fromisoformat(t_str).astimezone(jst)
-                        if dt_parsed.strftime("%Y-%m-%d") == target_date_str and dt_parsed.strftime("%H") == target_hour_str:
-                            clean_code = str(code).strip()
-                            clean_pop = str(pop).strip()
-                            
-                            sym = code_to_symbol(clean_code)
-                            
-                            if clean_pop and clean_pop.isdigit():
-                                pop_val = int(clean_pop)
-                            else:
-                                pop_val = 50 if sym == "☔" else 0
-                            
-                            if sym == "☔" and pop_val < 30:
-                                sym = "☁"
-                            elif sym != "☔" and pop_val >= 60:
-                                sym = "☔"
-                                
-                            return sym, pop_val
-                return day_symbol, 0
-
-            # --- 7. 指定時間（6,9,12,15,18,21）のフィルタリング & 最大4行制限 ---
-            forecast_lines = [f"低:{t_min_num}°C 高:{t_max_num}°C{diff_str} 傘:{prob_str}{umbrella_mark}"]
-            
-            hourly_slots = [
-                ("06", "06:00"),
-                ("09", "09:00"),
-                ("12", "12:00"),
-                ("15", "15:00"),
-                ("18", "18:00"),
-                ("21", "21:00")
-            ]
-            
-            valid_rows_count = 0
-            for hour_val, label in hourly_slots:
-                if valid_rows_count >= 4:
-                    break
-                    
-                base_dt = now + timedelta(days=1) if is_tomorrow_data else now
-                target_dt = base_dt.replace(hour=int(hour_val), minute=0, second=0, microsecond=0)
-                
-                if now > target_dt + timedelta(hours=2):
-                    continue
-                
-                sym, pop = find_hourly_data(hour_val)
-                
-                if hour_val == "06": temp = t_min_num + 1
-                elif hour_val == "09": temp = t_min_num + 4
-                elif hour_val == "12": temp = t_max_num - 2
-                elif hour_val == "15": temp = t_max_num - 1
-                elif hour_val == "18": temp = t_max_num - 4
-                else: temp = t_min_num + 2
-                
-                forecast_lines.append(f"{label} {sym}  {temp}°C{get_clothing_advice(temp)}")
-                valid_rows_count += 1
-            
-            weather_message = "\n".join(forecast_lines)
-            
-            print("--- 送信データ内容ログ（17時以降インデックスバグ修正版） ---")
-            print(f"JST Time: {now.strftime('%Y-%m-%d %H:%M:%S')}")
-            print(f"Title  : {title_text}")
-            print(f"Message:\n{weather_message}")
-            print("---------------------------------------------------------")
-
-            headers = {
-                "Authorization": f"Bearer {API_KEY}",
-                "Content-Type": "application/json"
-            }
-            
-            # --- タイトルのカスタムサイズ指定を削除し、メッセージ（本文）と同じ標準サイズで表示させます ---
-            payload = {
-                "refreshNow": True,
-                "title": title_text,
-                "message": weather_message
-            }
-            
-            response = requests.post(DOT_API_URL, headers=headers, json=payload)
-            if response.status_code in [200, 201]:
-                print(f"成功: {response.json().get('message')}")
-                with open(cache_file, "w") as f:
-                    f.write(current_hour_str)
-            else:
-                print(f"エラー発生 (ステータスコード: {response.status_code})")
-                exit(1)
-
-        except Exception as e:
-            print(f"スクリプト実行エラー: {e}")
-            exit(1)
-        EOF
-
-    - name: Save Run Hour and Temp Cache
-      uses: actions/cache/save@v4
-      if: success()
-      with:
-        path: |
-          last_run_hour.txt
-          weather_history.json
-        key: weather-run-cache-${{ github.run_id }}
+          if __name__ == "__main__":
+              main()
+          EOF
