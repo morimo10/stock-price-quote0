@@ -57,12 +57,17 @@ jobs:
                           continue
                           
                       parts = line.split(",")
-                      if len(parts) == 3:
+                      # 項目数を4つ（コード, 名前, 基準値, 株数）に対応
+                      if len(parts) == 4:
                           raw_code = parts[0].strip()
                           ticker = raw_code if raw_code.endswith(".T") else f"{raw_code}.T"
                           name = parts[1].strip()
                           limit = float(parts[2].strip())
-                          config[ticker] = {"name": name, "limit": limit}
+                          try:
+                              shares = int(parts[3].strip())
+                          except ValueError:
+                              shares = 0
+                          config[ticker] = {"name": name, "limit": limit, "shares": shares}
               return config
 
           def get_display_width(text):
@@ -102,6 +107,7 @@ jobs:
                   code = ticker.split('.')[0]
                   name = config["name"]
                   limit = config["limit"]
+                  shares = config["shares"]
                   
                   try:
                       stock = yf.Ticker(ticker)
@@ -111,6 +117,10 @@ jobs:
                           latest_price = todays_data['Close'].iloc[-1]
                           
                           diff_val = latest_price - limit
+                          # 株数 × 増減額 を計算
+                          total_diff = diff_val * shares
+                          # 万単位に変換して切り捨て (math.floor)
+                          total_diff_wan = math.floor(total_diff / 10000)
                           
                           if limit > 0:
                               raw_ratio = (diff_val / limit) * 100
@@ -124,16 +134,16 @@ jobs:
                           stocks_data.append({
                               "code": code,
                               "name": name,
-                              "diff": diff_val,
+                              "diff_wan": total_diff_wan,
                               "target_pct": target_pct,
                               "is_error": False
                           })
                       else:
-                          stocks_data.append({"code": code, "name": name, "diff": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
+                          stocks_data.append({"code": code, "name": name, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
                           
                   except Exception as e:
                       print(f"Error fetching {ticker}: {e}")
-                      stocks_data.append({"code": code, "name": name, "diff": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
+                      stocks_data.append({"code": code, "name": name, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
 
               stocks_data.sort(key=lambda x: x["target_pct"], reverse=True)
               
@@ -149,10 +159,11 @@ jobs:
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
                   else:
-                      sign = "+" if item["diff"] > 0 else ""
-                      diff_str = f"{sign}{item['diff']:,.0f}円" if item["diff"] != 0 else "0円"
+                      sign = "+" if item["diff_wan"] > 0 else ""
+                      # 単位を「万円」に変更
+                      diff_str = f"{sign}{item['diff_wan']:,}万円" if item["diff_wan"] != 0 else "0万円"
                       
-                      padded_diff = f"{diff_str:>7}"
+                      padded_diff = f"{diff_str:>8}"
                       
                       line_left = f" {padded_diff}  "
                       full_line_content = f"{line_left}{item['name']}"
@@ -169,7 +180,6 @@ jobs:
               print(f"■ メッセージ本文:\n{message}")
               print("────────────────────────────\n")
               
-              # 💡 マニュアルの指定通り、"styles" パラメータに統合してフォントサイズを指定
               payload = {
                   "refreshNow": True,
                   "title": title,
