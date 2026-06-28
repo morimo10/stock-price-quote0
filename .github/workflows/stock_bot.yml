@@ -176,13 +176,11 @@ jobs:
                   "message": message,
                   "styles": {
                       "title": {
-                          "fontFamily": "ChillDuanSans",
-                          "fontSize": 20,          # 💡 タイトルを小さめ(20px)に設定
-                          "fontWeight": 700
+                          "fontFamily": "ChillRoundGothic",
+                          "fontSize": 24
                       },
                       "message": {
-                          "fontFamily": "UnifontExMono16",  # 💡 本文は等幅フォントを維持
-                          "fontSize": 16
+                          "fontFamily": "ChillRoundGothic"
                       }
                   }
               }
