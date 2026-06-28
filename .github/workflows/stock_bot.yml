@@ -151,19 +151,25 @@ jobs:
               text_lines = []
               for item in stocks_data:
                   if item["is_error"]:
-                      err_label = f"{item['error_msg']:<6}"
-                      full_line_content = f" {err_label} ({item['shares']}) {item['name']}"
+                      err_label = pad_text(item['error_msg'], 7)
+                      padded_shares = f"{item['shares']:>4}"
+                      full_line_content = f" {err_label} ({padded_shares}) {item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
                   else:
-                      sign = "+" if item["diff_wan"] > 0 else ""
-                      diff_str = f"{sign}{item['diff_wan']:,}万円" if item["diff_wan"] != 0 else "0万円"
+                      # 符号を取得（プラス、マイナス、あるいはゼロの場合は半角スペース）
+                      sign = "+" if item["diff_wan"] > 0 else ("-" if item["diff_wan"] < 0 else " ")
+                      abs_diff = abs(item["diff_wan"])
                       
-                      # 金額部分を左詰め固定幅にしてスペースの崩れを防止
-                      padded_diff = pad_text(diff_str, 8)
+                      # 符号を除いた数値を3桁右詰めに固定
+                      diff_num_str = f"{abs_diff:>3}" if item["diff_wan"] != 0 else f"{0:>3}"
+                      diff_str = f"{sign}{diff_num_str}万円"
                       
-                      # 一列に整列
-                      full_line_content = f" {padded_diff} ({item['shares']}) {item['name']}"
+                      # 株数を4桁右詰めに固定（カンマなし）
+                      padded_shares = f"{item['shares']:>4}"
+                      
+                      # すべてを結合して行を生成
+                      full_line_content = f" {diff_str} ({padded_shares}) {item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
                       
