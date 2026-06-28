@@ -57,7 +57,6 @@ jobs:
                           continue
                           
                       parts = line.split(",")
-                      # 項目数を4つ（コード, 名前, 基準値, 株数）に対応
                       if len(parts) == 4:
                           raw_code = parts[0].strip()
                           ticker = raw_code if raw_code.endswith(".T") else f"{raw_code}.T"
@@ -117,9 +116,7 @@ jobs:
                           latest_price = todays_data['Close'].iloc[-1]
                           
                           diff_val = latest_price - limit
-                          # 株数 × 増減額 を計算
                           total_diff = diff_val * shares
-                          # 万単位に変換して切り捨て (math.floor)
                           total_diff_wan = math.floor(total_diff / 10000)
                           
                           if limit > 0:
@@ -134,16 +131,17 @@ jobs:
                           stocks_data.append({
                               "code": code,
                               "name": name,
+                              "shares": shares,
                               "diff_wan": total_diff_wan,
                               "target_pct": target_pct,
                               "is_error": False
                           })
                       else:
-                          stocks_data.append({"code": code, "name": name, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
+                          stocks_data.append({"code": code, "name": name, "shares": shares, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
                           
                   except Exception as e:
                       print(f"Error fetching {ticker}: {e}")
-                      stocks_data.append({"code": code, "name": name, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
+                      stocks_data.append({"code": code, "name": name, "shares": shares, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
 
               stocks_data.sort(key=lambda x: x["target_pct"], reverse=True)
               
@@ -155,17 +153,17 @@ jobs:
                   if item["is_error"]:
                       err_label = f"{item['error_msg']:>6} "
                       line_left = f" {err_label} "
-                      full_line_content = f"{line_left}{item['name']}"
+                      full_line_content = f"{line_left}({item['shares']}) {item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
                   else:
                       sign = "+" if item["diff_wan"] > 0 else ""
-                      # 単位を「万円」に変更
                       diff_str = f"{sign}{item['diff_wan']:,}万円" if item["diff_wan"] != 0 else "0万円"
                       
                       padded_diff = f"{diff_str:>8}"
                       
-                      line_left = f" {padded_diff}  "
+                      # 金額の後ろに (株数) を追加
+                      line_left = f" {padded_diff} ({item['shares']}) "
                       full_line_content = f"{line_left}{item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
