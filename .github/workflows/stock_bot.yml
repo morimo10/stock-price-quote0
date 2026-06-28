@@ -88,7 +88,8 @@ jobs:
           def get_nikkei_change():
               try:
                   nikkei = yf.Ticker("^N225")
-                  hist = nikkei.history(period="2d")
+                  # 土日や市場が動いていない時間帯でも直近2営業日分を確保するため5日分取得
+                  hist = nikkei.history(period="5d")
                   if len(hist) >= 2:
                       current_price = hist['Close'].iloc[-1]
                       prev_close = hist['Close'].iloc[-2]
@@ -157,18 +158,14 @@ jobs:
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
                   else:
-                      # 符号を取得（プラス、マイナス、あるいはゼロの場合は半角スペース）
                       sign = "+" if item["diff_wan"] > 0 else ("-" if item["diff_wan"] < 0 else " ")
                       abs_diff = abs(item["diff_wan"])
                       
-                      # 符号を除いた数値を3桁右詰めに固定
                       diff_num_str = f"{abs_diff:>3}" if item["diff_wan"] != 0 else f"{0:>3}"
                       diff_str = f"{sign}{diff_num_str}万円"
                       
-                      # 株数を4桁右詰めに固定（カンマなし）
                       padded_shares = f"{item['shares']:>4}"
                       
-                      # すべてを結合して行を生成
                       full_line_content = f" {diff_str} ({padded_shares}) {item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
