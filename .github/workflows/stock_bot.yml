@@ -151,20 +151,19 @@ jobs:
               text_lines = []
               for item in stocks_data:
                   if item["is_error"]:
-                      err_label = f"{item['error_msg']:>6} "
-                      line_left = f" {err_label} "
-                      full_line_content = f"{line_left}({item['shares']}) {item['name']}"
+                      err_label = f"{item['error_msg']:<6}"
+                      full_line_content = f" {err_label} ({item['shares']}) {item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
                   else:
                       sign = "+" if item["diff_wan"] > 0 else ""
                       diff_str = f"{sign}{item['diff_wan']:,}万円" if item["diff_wan"] != 0 else "0万円"
                       
-                      padded_diff = f"{diff_str:>8}"
+                      # 金額部分を左詰め固定幅にしてスペースの崩れを防止
+                      padded_diff = pad_text(diff_str, 8)
                       
-                      # 金額の後ろに (株数) を追加
-                      line_left = f" {padded_diff} ({item['shares']}) "
-                      full_line_content = f"{line_left}{item['name']}"
+                      # 一列に整列
+                      full_line_content = f" {padded_diff} ({item['shares']}) {item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
                       
@@ -185,7 +184,7 @@ jobs:
                   "styles": {
                       "title": {
                           "fontFamily": "ChillRoundGothic",
-                          "fontSize": 24
+                          "fontSize": 22
                       },
                       "message": {
                           "fontFamily": "ChillRoundGothic"
