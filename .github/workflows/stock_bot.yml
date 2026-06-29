@@ -7,14 +7,14 @@ on:
     - cron: '37 0-6 * * 1-5'
     - cron: '47 0-6 * * 1-5'
     - cron: '53 0-6 * * 1-5'
-  workflow_dispatch: #　手動実行 
+  workflow_dispatch:
 
 # 多重実行防止
 concurrency:
   group: weekday-daytime-job
   cancel-in-progress: false
 
-# 60日サスペンドを回避するための書き込み権限を追加
+# 【修正箇所】jobsと同じ階層（左端）に正しく配置
 permissions:
   contents: write
 
@@ -237,11 +237,10 @@ jobs:
               main()
           EOF
 
-    # 外部依存を排除し、週に1回（毎週月曜の最初の実行時）に空コミットをして60日サスペンドを完全に防ぐ
+    # 毎週月曜の最初の定期実行時に空コミットをして60日停止を完全に防ぐ
     - name: Keepalive (Prevent 60 days suspend)
-      if: github.event_name == 'schedule' && github.event.cron == '17 0-6 * * 1-5' && strategy.job-index == 0
+      if: github.event_name == 'schedule' && github.event.cron == '17 0-6 * * 1-5'
       run: |
-        # 毎週月曜日にのみコミットを実行するように調整（月曜＝1）
         if [ "$(date +%u)" -eq 1 ]; then
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
