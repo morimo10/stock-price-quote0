@@ -1,8 +1,7 @@
-name: Send Stock Price to Dot Device (Single File Version)
+name: Send Stock Price to Dot Device
 
 on:
   schedule:
-    # 平日の日本時間 09:00〜15:59（UTC 0–6）
     - cron: '17 0-6 * * 1-5'
     - cron: '37 0-6 * * 1-5'
     - cron: '47 0-6 * * 1-5'
@@ -225,14 +224,3 @@ jobs:
           if __name__ == "__main__":
               main()
           EOF
-
-    # 毎週月曜の最初の定期実行時に空コミットをして60日停止を完全に防ぐ
-    - name: Keepalive (Prevent 60 days suspend)
-      if: github.event_name == 'schedule' && github.event.cron == '17 0-6 * * 1-5'
-      run: |
-        if [ "$(date +%u)" -eq 1 ]; then
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git commit --allow-empty -m "keepalive: prevent stock workflow suspension"
-          git push origin HEAD:${{ github.ref_name }}
-        fi
