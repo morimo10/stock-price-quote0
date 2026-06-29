@@ -14,6 +14,10 @@ concurrency:
   group: weekday-daytime-job
   cancel-in-progress: false
 
+# 60日サスペンドを回避するための書き込み権限を追加
+permissions:
+  contents: write
+
 jobs:
   run-stock-bot:
     runs-on: ubuntu-latest
@@ -232,3 +236,15 @@ jobs:
           if __name__ == "__main__":
               main()
           EOF
+
+    # 外部依存を排除し、週に1回（毎週月曜の最初の実行時）に空コミットをして60日サスペンドを完全に防ぐ
+    - name: Keepalive (Prevent 60 days suspend)
+      if: github.event_name == 'schedule' && github.event.cron == '17 0-6 * * 1-5' && strategy.job-index == 0
+      run: |
+        # 毎週月曜日にのみコミットを実行するように調整（月曜＝1）
+        if [ "$(date +%u)" -eq 1 ]; then
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit --allow-empty -m "keepalive: prevent stock workflow suspension"
+          git push origin HEAD:${{ github.ref_name }}
+        fi
