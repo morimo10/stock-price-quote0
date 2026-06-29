@@ -13,6 +13,7 @@ concurrency:
   group: weekday-daytime-job
   cancel-in-progress: false
 
+# 【修正箇所】スペースなしで完全に左端から記述
 permissions:
   contents: write
 
