@@ -7,7 +7,7 @@ on:
     - cron: '37 0-6 * * 1-5'
     - cron: '47 0-6 * * 1-5'
     - cron: '53 0-6 * * 1-5'
-  workflow_dispatch:
+  workflow_dispatch: #　手動実行 
 
 # 多重実行防止
 concurrency:
