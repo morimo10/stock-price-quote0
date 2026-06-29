@@ -13,10 +13,6 @@ concurrency:
   group: weekday-daytime-job
   cancel-in-progress: false
 
-# 【修正箇所】スペースなしで完全に左端から記述
-permissions:
-  contents: write
-
 jobs:
   run-stock-bot:
     runs-on: ubuntu-latest
@@ -220,6 +216,7 @@ jobs:
               now_jst = datetime.datetime.now(jst)
               time_str = now_jst.strftime("%H:%M")
               
+                  
               nikkei_info = get_nikkei_change()
               title = f"{time_str}{nikkei_info}"
               
@@ -230,9 +227,11 @@ jobs:
               main()
           EOF
 
-    # 毎週月曜の最初の定期実行時に空コミットをして60日停止を完全に防ぐ
+    # サスペンド防止用の書き込み権限を、このステップ単体に安全に付与
     - name: Keepalive (Prevent 60 days suspend)
       if: github.event_name == 'schedule' && github.event.cron == '17 0-6 * * 1-5'
+      permissions:
+        contents: write
       run: |
         if [ "$(date +%u)" -eq 1 ]; then
           git config --global user.name "github-actions[bot]"
