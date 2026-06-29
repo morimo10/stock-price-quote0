@@ -2,10 +2,17 @@ name: Send Stock Price to Dot Device (Single File Version)
 
 on:
   schedule:
-    # 平日の日本時間 09:00〜15:59 の間、15分おきに自動実行
-    - cron: '17,37,47,53 0-6 * * 1-5'
-    # - cron: '0 0 1 1 *'
-  workflow_dispatch: # 手動実行ボタンを有効化
+    # 平日の日本時間 09:00〜15:59（UTC 0–6）
+    - cron: '17 0-6 * * 1-5'
+    - cron: '37 0-6 * * 1-5'
+    - cron: '47 0-6 * * 1-5'
+    - cron: '53 0-6 * * 1-5'
+  workflow_dispatch:
+
+# 多重実行防止
+concurrency:
+  group: weekday-daytime-job
+  cancel-in-progress: false
 
 jobs:
   run-stock-bot:
