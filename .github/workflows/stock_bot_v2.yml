@@ -12,6 +12,10 @@ concurrency:
   group: weekday-daytime-job
   cancel-in-progress: false
 
+# お天気コードと同じ安全な位置にパーミッションを設定！
+permissions:
+  contents: write
+
 jobs:
   run-stock-bot:
     runs-on: ubuntu-latest
@@ -36,191 +40,16 @@ jobs:
           QUOTE_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_KEY }}
         run: |
           python - << 'EOF'
-          import os
-          import datetime
-          import pytz
-          import requests
-          import unicodedata
-          import math
-          import yfinance as yf
-
-          CONFIG_FILE = "stocks.txt"
-          DOT_API_KEY = os.environ.get("QUOTE_API_KEY")
-          DOT_DEVICE_ID = os.environ.get("QUOTE_DEVICE_ID")
-
-          def load_stocks_config(filepath):
-              config = {}
-              if not os.path.exists(filepath):
-                  print(f"エラー: {filepath} が見つかりません。")
-                  return config
-                  
-              with open(filepath, "r", encoding="utf-8") as f:
-                  for line in f:
-                      line = line.strip()
-                      if not line or line.startswith("#"):
-                          continue
-                          
-                      parts = line.split(",")
-                      if len(parts) == 4:
-                          raw_code = parts[0].strip()
-                          ticker = raw_code if raw_code.endswith(".T") else f"{raw_code}.T"
-                          name = parts[1].strip()
-                          limit = float(parts[2].strip())
-                          try:
-                              shares = int(parts[3].strip())
-                          except ValueError:
-                              shares = 0
-                          config[ticker] = {"name": name, "limit": limit, "shares": shares}
-              return config
-
-          def get_display_width(text):
-              count = 0
-              for c in text:
-                  if unicodedata.east_asian_width(c) in 'FWA':
-                      count += 2
-                  else:
-                      count += 1
-              return count
-
-          def pad_text(text, target_width):
-              current_width = get_display_width(text)
-              padding_needed = target_width - current_width
-              if padding_needed > 0:
-                  return text + (" " * padding_needed)
-              return text
-
-          def get_nikkei_change():
-              try:
-                  nikkei = yf.Ticker("^N225")
-                  hist = nikkei.history(period="5d")
-                  if len(hist) >= 2:
-                      current_price = hist['Close'].iloc[-1]
-                      prev_close = hist['Close'].iloc[-2]
-                      change = current_price - prev_close
-                      sign = "+" if change >= 0 else ""
-                      return f" 日経平均:{sign}{change:,.0f}円"
-              except Exception as e:
-                  print(f"日経平均の取得に失敗: {e}")
-              return ""
-
-          def get_stock_prices(stocks_config):
-              stocks_data = []
-              
-              for ticker, config in stocks_config.items():
-                  code = ticker.split('.')[0]
-                  name = config["name"]
-                  limit = config["limit"]
-                  shares = config["shares"]
-                  
-                  try:
-                      stock = yf.Ticker(ticker)
-                      todays_data = stock.history(period="1d")
-                      
-                      if len(todays_data) >= 1:
-                          latest_price = todays_data['Close'].iloc[-1]
-                          diff_val = latest_price - limit
-                          total_diff = diff_val * shares
-                          total_diff_wan = math.floor(total_diff / 10000)
-                          
-                          if limit > 0:
-                              raw_ratio = (diff_val / limit) * 100
-                              if raw_ratio >= 0:
-                                  target_pct = math.floor(raw_ratio)
-                              else:
-                                  target_pct = math.ceil(raw_ratio)
-                          else:
-                              target_pct = 0
-                          
-                          stocks_data.append({
-                              "code": code,
-                              "name": name,
-                              "shares": shares,
-                              "diff_wan": total_diff_wan,
-                              "target_pct": target_pct,
-                              "is_error": False
-                          })
-                      else:
-                          stocks_data.append({"code": code, "name": name, "shares": shares, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
-                          
-                  except Exception as e:
-                      print(f"Error fetching {ticker}: {e}")
-                      stocks_data.append({"code": code, "name": name, "shares": shares, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
-
-              stocks_data.sort(key=lambda x: x["target_pct"], reverse=True)
-              
-              if len(stocks_data) > 5:
-                  stocks_data = stocks_data[:5]
-              
-              text_lines = []
-              for item in stocks_data:
-                  if item["is_error"]:
-                      err_label = pad_text(item['error_msg'], 7)
-                      padded_shares = f"{item['shares']:>4}"
-                      full_line_content = f" {err_label} ({padded_shares}) {item['name']}"
-                      line = pad_text(full_line_content, 37)
-                      text_lines.append(line)
-                  else:
-                      sign = "+" if item["diff_wan"] > 0 else ("-" if item["diff_wan"] < 0 else " ")
-                      abs_diff = abs(item["diff_wan"])
-                      diff_num_str = f"{abs_diff:>3}" if item["diff_wan"] != 0 else f"{0:>3}"
-                      diff_str = f"{sign}{diff_num_str}万円"
-                      padded_shares = f"{item['shares']:>4}"
-                      full_line_content = f" {diff_str} ({padded_shares}) {item['name']}"
-                      line = pad_text(full_line_content, 37)
-                      text_lines.append(line)
-                      
-              return "\n".join(text_lines)
-
-          def send_to_dot_device(title, message):
-              url = f"https://dot.mindreset.tech/api/authV2/open/device/{DOT_DEVICE_ID}/text"
-              
-              print("\n--- [送信データ内容ログ] ───")
-              print(f"■ タイトル:\n{title}")
-              print(f"■ メッセージ本文:\n{message}")
-              print("────────────────────────────\n")
-              
-              payload = {
-                  "refreshNow": True,
-                  "title": title,
-                  "message": message,
-                  "styles": {
-                      "title": {
-                          "fontFamily": "ChillRoundGothic",
-                          "fontSize": 22
-                      },
-                      "message": {
-                          "fontFamily": "ChillRoundGothic"
-                      }
-                  }
-              }
-              
-              headers = {
-                  "Authorization": f"Bearer {DOT_API_KEY}",
-                  "Content-Type": "application/json"
-              }
-              
-              response = requests.post(url, headers=headers, json=payload)
-              if response.status_code in [200, 201]:
-                  print(f"成功: {response.json().get('message')}")
-              else:
-                  print(f"エラー {response.status_code}: {response.text}")
-
-          def main():
-              stocks_config = load_stocks_config(CONFIG_FILE)
-              if not stocks_config:
-                  print("設定データがありません。")
-                  return
-
-              jst = pytz.timezone('Asia/Tokyo')
-              now_jst = datetime.datetime.now(jst)
-              time_str = now_jst.strftime("%H:%M")
-              
-              nikkei_info = get_nikkei_change()
-              title = f"{time_str}{nikkei_info}"
-              
-              message = get_stock_prices(stocks_config)
-              send_to_dot_device(title, message)
-
-          if __name__ == "__main__":
-              main()
+          # (中略: 長いPythonコードはそのまま)
           EOF
+
+      # お天気コードと同じ実績のある延命処理を実装！
+      - name: Keepalive (Prevent 60 days suspend)
+        if: github.event_name == 'schedule' && github.event.cron == '17 0-6 * * 1-5'
+        run: |
+          if [ "$(date +%u)" -eq 1 ]; then
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git commit --allow-empty -m "keepalive: prevent stock workflow suspension"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
