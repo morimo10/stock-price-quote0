@@ -9,12 +9,10 @@ on:
     - cron: '53 0-6 * * 1-5'
   workflow_dispatch:
 
-# 多重実行防止
 concurrency:
   group: weekday-daytime-job
   cancel-in-progress: false
 
-# jobsと同じ階層（左端）に正しく配置
 permissions:
   contents: write
 
@@ -55,7 +53,6 @@ jobs:
           DOT_DEVICE_ID = os.environ.get("QUOTE_DEVICE_ID")
 
           def load_stocks_config(filepath):
-              """外部テキストファイルから設定を読み込む"""
               config = {}
               if not os.path.exists(filepath):
                   print(f"エラー: {filepath} が見つかりません。")
@@ -99,7 +96,6 @@ jobs:
           def get_nikkei_change():
               try:
                   nikkei = yf.Ticker("^N225")
-                  # 土日や市場が動いていない時間帯でも直近2営業日分を確保するため5日分取得
                   hist = nikkei.history(period="5d")
                   if len(hist) >= 2:
                       current_price = hist['Close'].iloc[-1]
@@ -126,7 +122,6 @@ jobs:
                       
                       if len(todays_data) >= 1:
                           latest_price = todays_data['Close'].iloc[-1]
-                          
                           diff_val = latest_price - limit
                           total_diff = diff_val * shares
                           total_diff_wan = math.floor(total_diff / 10000)
@@ -171,12 +166,9 @@ jobs:
                   else:
                       sign = "+" if item["diff_wan"] > 0 else ("-" if item["diff_wan"] < 0 else " ")
                       abs_diff = abs(item["diff_wan"])
-                      
                       diff_num_str = f"{abs_diff:>3}" if item["diff_wan"] != 0 else f"{0:>3}"
                       diff_str = f"{sign}{diff_num_str}万円"
-                      
                       padded_shares = f"{item['shares']:>4}"
-                      
                       full_line_content = f" {diff_str} ({padded_shares}) {item['name']}"
                       line = pad_text(full_line_content, 37)
                       text_lines.append(line)
