@@ -14,7 +14,7 @@ concurrency:
   group: weekday-daytime-job
   cancel-in-progress: false
 
-# 【修正箇所】jobsと同じ階層（左端）に正しく配置
+# jobsと同じ階層（左端）に正しく配置
 permissions:
   contents: write
 
