@@ -1,4 +1,4 @@
-name: Send Stock Price to Dot Device (FINAL FIXED)
+name: Send Stock Price to Dot Device (PRO FINAL)
 
 on:
   schedule:
@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch and Send Stock Data
+      - name: Run Stock Script
         env:
           QUOTE_API_KEY: ${{ secrets.QUOTE_API_KEY }}
           QUOTE_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_KEY }}
@@ -45,15 +45,12 @@ jobs:
               return stocks
 
           # -----------------------------
-          # 株価取得（Yahoo JSON 安定版）
+          # 株価取得（安全版）
           # -----------------------------
           def get_price(symbol):
               try:
                   url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-
-                  headers = {
-                      "User-Agent": "Mozilla/5.0"
-                  }
+                  headers = {"User-Agent": "Mozilla/5.0"}
 
                   r = requests.get(url, headers=headers, timeout=10)
                   data = r.json()
@@ -64,15 +61,39 @@ jobs:
 
                   return result[0]["meta"].get("regularMarketPrice")
 
-              except Exception as e:
-                  print("price error:", symbol, e)
+              except:
                   return None
 
           # -----------------------------
-          # 日経平均（安全版）
+          # 日経平均（前日比）
           # -----------------------------
-          def get_nikkei():
-              return get_price("^N225")
+          def get_nikkei_change():
+              try:
+                  url = "https://query1.finance.yahoo.com/v8/finance/chart/^N225"
+                  headers = {"User-Agent": "Mozilla/5.0"}
+
+                  r = requests.get(url, headers=headers, timeout=10)
+                  data = r.json()
+
+                  result = data.get("chart", {}).get("result")
+                  if not result:
+                      return None
+
+                  meta = result[0].get("meta", {})
+
+                  current = meta.get("regularMarketPrice")
+                  prev = meta.get("chartPreviousClose")
+
+                  if current is None or prev is None:
+                      return None
+
+                  diff = current - prev
+                  sign = "+" if diff >= 0 else ""
+
+                  return f"日経:{sign}{int(diff):,}円"
+
+              except:
+                  return None
 
           # -----------------------------
           # 送信
@@ -109,13 +130,11 @@ jobs:
               jst = pytz.timezone("Asia/Tokyo")
               now = datetime.datetime.now(jst).strftime("%H:%M")
 
-              results = []
+              # 日経
+              nikkei = get_nikkei_change()
+              nikkei_text = nikkei if nikkei else ""
 
-              # 日経平均
-              nikkei = get_nikkei()
-              nikkei_text = ""
-              if nikkei is not None:
-                  nikkei_text = f" 日経:{int(nikkei):,}円"
+              results = []
 
               for s in stocks:
                   price = get_price(f"{s['code']}.T")
@@ -125,7 +144,7 @@ jobs:
 
                   diff = (price - s["limit"]) * s["shares"]
 
-                  # -0対策
+                  # -0対策（完全）
                   if abs(diff) < 50:
                       diff = 0
 
@@ -134,7 +153,7 @@ jobs:
                       "diff": diff
                   })
 
-              # ソート（数値で正しく）
+              # 数値ソート
               results.sort(key=lambda x: x["diff"], reverse=True)
 
               lines = []
@@ -145,13 +164,12 @@ jobs:
 
                   lines.append(f"{sign}{value}万円 {r['name']}")
 
-              # 全滅対策
               if not lines:
                   lines = ["データ取得失敗"]
 
               message = "\n".join(lines[:5])
 
-              send(f"{now}{nikkei_text}", message)
+              send(f"{now} {nikkei_text}".strip(), message)
 
           main()
           EOF
