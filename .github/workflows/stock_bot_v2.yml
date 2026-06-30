@@ -1,4 +1,4 @@
-name: Send Stock Price to Dot Device (Yahoo JSON FAST)
+name: Send Stock Price to Dot Device (FINAL STABLE)
 
 on:
   schedule:
@@ -31,28 +31,21 @@ jobs:
           # -----------------------------
           def load_config():
               stocks = []
-              try:
-                  with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                      for line in f:
-                          line = line.strip()
-                          if not line or line.startswith("#"):
-                              continue
-
-                          code, name, limit, shares = line.split(",")
-
-                          stocks.append({
-                              "code": code.strip(),
-                              "name": name.strip(),
-                              "limit": float(limit),
-                              "shares": int(shares)
-                          })
-              except Exception as e:
-                  print("load error:", e)
-
+              with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                  for line in f:
+                      if not line.strip() or line.startswith("#"):
+                          continue
+                      code, name, limit, shares = line.split(",")
+                      stocks.append({
+                          "code": code.strip(),
+                          "name": name.strip(),
+                          "limit": float(limit),
+                          "shares": int(shares)
+                      })
               return stocks
 
           # -----------------------------
-          # Yahoo Finance JSON（安定版）
+          # Yahoo JSON（安定）
           # -----------------------------
           def get_price(code):
               try:
@@ -60,8 +53,7 @@ jobs:
                   url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
                   headers = {
-                      "User-Agent": "Mozilla/5.0",
-                      "Accept": "application/json"
+                      "User-Agent": "Mozilla/5.0"
                   }
 
                   r = requests.get(url, headers=headers, timeout=10)
@@ -100,19 +92,21 @@ jobs:
               requests.post(url, headers=headers, json=payload)
 
           # -----------------------------
-          # メイン
+          # メイン処理（修正版）
           # -----------------------------
           def main():
               stocks = load_config()
 
-              if not stocks:
-                  print("no stocks")
-                  return
-
               jst = pytz.timezone("Asia/Tokyo")
               now = datetime.datetime.now(jst).strftime("%H:%M")
 
-              lines = []
+              results = []
+
+              # ★ 日経平均
+              nikkei = get_price("^N225")
+              nikkei_text = ""
+              if nikkei:
+                  nikkei_text = f" 日経:{int(nikkei):,}円"
 
               for s in stocks:
                   price = get_price(s["code"])
@@ -122,19 +116,34 @@ jobs:
 
                   diff = (price - s["limit"]) * s["shares"]
 
-                  sign = "+" if diff > 0 else "-" if diff < 0 else " "
+                  # ★ -0対策（重要）
+                  if abs(diff) < 50:
+                      diff = 0
 
-                  lines.append(f"{sign}{int(abs(diff)/10000)}万円 {s['name']}")
+                  results.append({
+                      "name": s["name"],
+                      "diff": diff,
+                      "shares": s["shares"]
+                  })
 
-              # ★重要：全部失敗対策
+              # ★ ソート修正（数値）
+              results.sort(key=lambda x: x["diff"], reverse=True)
+
+              lines = []
+
+              for r in results:
+                  sign = "+" if r["diff"] > 0 else "-" if r["diff"] < 0 else " "
+                  value = int(abs(r["diff"]) / 10000)
+
+                  lines.append(f"{sign}{value}万円 {r['name']}")
+
+              # ★ 全滅対策
               if not lines:
                   lines = ["データ取得失敗"]
 
               message = "\n".join(lines[:5])
 
-              title = now
-
-              send(title, message)
+              send(f"{now}{nikkei_text}", message)
 
           main()
           EOF
