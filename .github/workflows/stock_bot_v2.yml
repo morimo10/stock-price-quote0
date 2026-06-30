@@ -1,4 +1,4 @@
-name: Send Stock Price to Dot Device (FAST STABLE)
+name: Send Stock Price to Dot Device (Yahoo JSON FAST)
 
 on:
   schedule:
@@ -13,7 +13,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Fetch and Send
+      - name: Fetch and Send Stock Data
         env:
           QUOTE_API_KEY: ${{ secrets.QUOTE_API_KEY }}
           QUOTE_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_KEY }}
@@ -37,7 +37,9 @@ jobs:
                           line = line.strip()
                           if not line or line.startswith("#"):
                               continue
+
                           code, name, limit, shares = line.split(",")
+
                           stocks.append({
                               "code": code.strip(),
                               "name": name.strip(),
@@ -45,34 +47,27 @@ jobs:
                               "shares": int(shares)
                           })
               except Exception as e:
-                  print("stocks load error:", e)
+                  print("load error:", e)
+
               return stocks
 
           # -----------------------------
-          # Stooq取得（超安定版）
+          # Yahoo Finance JSON（安定版）
           # -----------------------------
           def get_price(code):
               try:
-                  symbol = f"{code.lower()}.jp"
-                  url = f"https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
+                  symbol = f"{code}.T"
+                  url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
-                  r = requests.get(url, timeout=10)
-                  text = r.text.strip().split("\n")
+                  headers = {
+                      "User-Agent": "Mozilla/5.0",
+                      "Accept": "application/json"
+                  }
 
-                  if len(text) < 2:
-                      return None
+                  r = requests.get(url, headers=headers, timeout=10)
+                  data = r.json()
 
-                  cols = text[1].split(",")
-
-                  if len(cols) < 7:
-                      return None
-
-                  close = cols[6]
-
-                  if close in ("", "N/A"):
-                      return None
-
-                  return float(close)
+                  return data["chart"]["result"][0]["meta"]["regularMarketPrice"]
 
               except Exception as e:
                   print("price error:", code, e)
@@ -105,13 +100,13 @@ jobs:
               requests.post(url, headers=headers, json=payload)
 
           # -----------------------------
-          # メイン処理
+          # メイン
           # -----------------------------
           def main():
               stocks = load_config()
 
               if not stocks:
-                  print("no stocks loaded")
+                  print("no stocks")
                   return
 
               jst = pytz.timezone("Asia/Tokyo")
@@ -131,7 +126,7 @@ jobs:
 
                   lines.append(f"{sign}{int(abs(diff)/10000)}万円 {s['name']}")
 
-              # ★重要：空対策
+              # ★重要：全部失敗対策
               if not lines:
                   lines = ["データ取得失敗"]
 
