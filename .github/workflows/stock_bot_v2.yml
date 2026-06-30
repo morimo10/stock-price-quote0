@@ -1,4 +1,4 @@
-name: Send Stock Price to Dot Device (FAST)
+name: Send Stock Price to Dot Device (FAST STABLE)
 
 on:
   schedule:
@@ -26,11 +26,17 @@ jobs:
 
           CONFIG_FILE = "stocks.txt"
 
+          # -----------------------------
+          # 設定読み込み
+          # -----------------------------
           def load_config():
               stocks = []
-              with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                  for line in f:
-                      if line.strip() and not line.startswith("#"):
+              try:
+                  with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                      for line in f:
+                          line = line.strip()
+                          if not line or line.startswith("#"):
+                              continue
                           code, name, limit, shares = line.split(",")
                           stocks.append({
                               "code": code.strip(),
@@ -38,39 +44,75 @@ jobs:
                               "limit": float(limit),
                               "shares": int(shares)
                           })
+              except Exception as e:
+                  print("stocks load error:", e)
               return stocks
 
           # -----------------------------
-          # Stooq API（最速）
+          # Stooq取得（超安定版）
           # -----------------------------
           def get_price(code):
-              symbol = f"{code.lower()}.jp"
-              url = f"https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
+              try:
+                  symbol = f"{code.lower()}.jp"
+                  url = f"https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
 
-              r = requests.get(url, timeout=10)
-              lines = r.text.strip().split("\n")
+                  r = requests.get(url, timeout=10)
+                  text = r.text.strip().split("\n")
 
-              if len(lines) < 2:
+                  if len(text) < 2:
+                      return None
+
+                  cols = text[1].split(",")
+
+                  if len(cols) < 7:
+                      return None
+
+                  close = cols[6]
+
+                  if close in ("", "N/A"):
+                      return None
+
+                  return float(close)
+
+              except Exception as e:
+                  print("price error:", code, e)
                   return None
 
-              close = lines[1].split(",")[6]
-              return float(close)
+          # -----------------------------
+          # 送信
+          # -----------------------------
+          def send(title, message):
+              url = f"https://dot.mindreset.tech/api/authV2/open/device/{os.environ['QUOTE_DEVICE_ID']}/text"
 
-          def send(title, msg, device_id, api_key):
-              url = f"https://dot.mindreset.tech/api/authV2/open/device/{device_id}/text"
+              print("\n--- [送信データ内容ログ] ───")
+              print("■ タイトル:")
+              print(title)
+              print("■ メッセージ本文:")
+              print(message)
+              print("────────────────────────────\n")
+
               payload = {
                   "refreshNow": True,
                   "title": title,
-                  "message": msg
+                  "message": message
               }
+
               headers = {
-                  "Authorization": f"Bearer {api_key}",
+                  "Authorization": f"Bearer {os.environ['QUOTE_API_KEY']}",
                   "Content-Type": "application/json"
               }
+
               requests.post(url, headers=headers, json=payload)
 
+          # -----------------------------
+          # メイン処理
+          # -----------------------------
           def main():
               stocks = load_config()
+
+              if not stocks:
+                  print("no stocks loaded")
+                  return
 
               jst = pytz.timezone("Asia/Tokyo")
               now = datetime.datetime.now(jst).strftime("%H:%M")
@@ -84,23 +126,20 @@ jobs:
                       continue
 
                   diff = (price - s["limit"]) * s["shares"]
-                  sign = "+" if diff > 0 else "-"
+
+                  sign = "+" if diff > 0 else "-" if diff < 0 else " "
+
                   lines.append(f"{sign}{int(abs(diff)/10000)}万円 {s['name']}")
+
+              # ★重要：空対策
+              if not lines:
+                  lines = ["データ取得失敗"]
 
               message = "\n".join(lines[:5])
 
-              title = f"{now}"
+              title = now
 
-              print("\n--- [送信データ内容ログ] ───")
-              print("■ タイトル:")
-              print(title)
-              print("■ メッセージ本文:")
-              print(message)
-              print("────────────────────────────\n")
-
-              send(title, message,
-                   os.environ["QUOTE_DEVICE_ID"],
-                   os.environ["QUOTE_API_KEY"])
+              send(title, message)
 
           main()
           EOF
