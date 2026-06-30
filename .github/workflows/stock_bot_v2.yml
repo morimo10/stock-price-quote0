@@ -3,9 +3,10 @@ name: Send Stock Price to Dot Device
 on:
   schedule:
     # 平日の日本時間 09:00〜15:59（UTC 0–6）
-    - cron: '17 0-6 * * 1-5'
-    - cron: '37 0-6 * * 1-5'
-    - cron: '47 0-6 * * 1-5'
+    - cron: '13 0-6 * * 1-5'
+    - cron: '23 0-6 * * 1-5'
+    - cron: '33 0-6 * * 1-5'
+    - cron: '43 0-6 * * 1-5'
     - cron: '53 0-6 * * 1-5'
   workflow_dispatch:
 
