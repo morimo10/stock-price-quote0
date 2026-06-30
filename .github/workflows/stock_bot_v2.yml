@@ -1,152 +1,96 @@
-name: Send Stock Price to Dot Device
+name: Send Stock Price to Dot Device (FAST)
 
 on:
   schedule:
-    # 平日 09:00〜15:59（JST）相当
     - cron: '13 0-6 * * 1-5'
     - cron: '43 0-6 * * 1-5'
   workflow_dispatch:
 
-concurrency:
-  group: weekday-daytime-job
-  cancel-in-progress: false
-
-permissions:
-  contents: write
-
 jobs:
-  run-stock-bot:
-    runs-on: ubuntu-latest
+  run:
+    runs-on: ubuntu-22.04
 
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Set up Python (cached)
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-          cache: 'pip'
-
-      - name: Install Dependencies
-        run: |
-          pip install requests pytz yfinance
-
-      - name: Fetch and Send Stock Data
+      - name: Fetch and Send
         env:
           QUOTE_API_KEY: ${{ secrets.QUOTE_API_KEY }}
           QUOTE_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_KEY }}
         run: |
           python - << 'EOF'
           import os
-          import math
+          import requests
           import datetime
           import pytz
-          import requests
-          import unicodedata
-          import yfinance as yf
 
           CONFIG_FILE = "stocks.txt"
-          DOT_API_KEY = os.environ.get("QUOTE_API_KEY")
-          DOT_DEVICE_ID = os.environ.get("QUOTE_DEVICE_ID")
 
-          # -----------------------------
-          # 設定読み込み
-          # -----------------------------
-          def load_stocks_config(filepath):
-              config = {}
-              with open(filepath, "r", encoding="utf-8") as f:
+          def load_config():
+              stocks = []
+              with open(CONFIG_FILE, "r", encoding="utf-8") as f:
                   for line in f:
-                      line = line.strip()
-                      if not line or line.startswith("#"):
-                          continue
-
-                      code, name, limit, shares = line.split(",")
-                      ticker = code if code.endswith(".T") else f"{code}.T"
-
-                      config[ticker] = {
-                          "name": name.strip(),
-                          "limit": float(limit),
-                          "shares": int(shares)
-                      }
-              return config
+                      if line.strip() and not line.startswith("#"):
+                          code, name, limit, shares = line.split(",")
+                          stocks.append({
+                              "code": code.strip(),
+                              "name": name.strip(),
+                              "limit": float(limit),
+                              "shares": int(shares)
+                          })
+              return stocks
 
           # -----------------------------
-          # 文字幅調整
+          # Stooq API（最速）
           # -----------------------------
-          def get_display_width(text):
-              return sum(2 if unicodedata.east_asian_width(c) in "FWA" else 1 for c in text)
+          def get_price(code):
+              symbol = f"{code.lower()}.jp"
+              url = f"https://stooq.com/q/l/?s={symbol}&f=sd2t2ohlcv&h&e=csv"
 
-          def pad_text(text, width):
-              return text + " " * max(0, width - get_display_width(text))
+              r = requests.get(url, timeout=10)
+              lines = r.text.strip().split("\n")
 
-          # -----------------------------
-          # 株価取得（高速化版：一括）
-          # -----------------------------
-          def get_stock_prices(stocks_config):
-              tickers = list(stocks_config.keys()) + ["^N225"]
+              if len(lines) < 2:
+                  return None
 
-              data = yf.download(
-                  tickers=tickers,
-                  period="2d",
-                  threads=True,
-                  group_by="ticker",
-                  progress=False
-              )
+              close = lines[1].split(",")[6]
+              return float(close)
 
-              results = []
+          def send(title, msg, device_id, api_key):
+              url = f"https://dot.mindreset.tech/api/authV2/open/device/{device_id}/text"
+              payload = {
+                  "refreshNow": True,
+                  "title": title,
+                  "message": msg
+              }
+              headers = {
+                  "Authorization": f"Bearer {api_key}",
+                  "Content-Type": "application/json"
+              }
+              requests.post(url, headers=headers, json=payload)
 
-              for ticker, cfg in stocks_config.items():
-                  try:
-                      df = data[ticker]
-                      latest = df["Close"].iloc[-1]
+          def main():
+              stocks = load_config()
 
-                      diff = latest - cfg["limit"]
-                      total = diff * cfg["shares"]
-                      diff_wan = math.floor(total / 10000)
-
-                      pct = (diff / cfg["limit"]) * 100 if cfg["limit"] else 0
-                      pct = math.floor(pct) if pct >= 0 else math.ceil(pct)
-
-                      results.append({
-                          "name": cfg["name"],
-                          "shares": cfg["shares"],
-                          "diff_wan": diff_wan,
-                          "pct": pct
-                      })
-
-                  except Exception:
-                      results.append({
-                          "name": cfg["name"],
-                          "shares": cfg["shares"],
-                          "diff_wan": 0,
-                          "pct": -999
-                      })
-
-              results.sort(key=lambda x: x["pct"], reverse=True)
-              results = results[:5]
+              jst = pytz.timezone("Asia/Tokyo")
+              now = datetime.datetime.now(jst).strftime("%H:%M")
 
               lines = []
-              for r in results:
-                  sign = "+" if r["diff_wan"] > 0 else "-" if r["diff_wan"] < 0 else " "
-                  line = f" {sign}{abs(r['diff_wan']):>3}万円 ({r['shares']:>4}) {r['name']}"
-                  lines.append(pad_text(line, 37))
 
-              # 日経平均
-              nikkei = data["^N225"]["Close"]
-              diff = nikkei.iloc[-1] - nikkei.iloc[-2]
-              sign = "+" if diff >= 0 else ""
-              nikkei_info = f" 日経平均:{sign}{diff:,.0f}円"
+              for s in stocks:
+                  price = get_price(s["code"])
 
-              return "\n".join(lines), nikkei_info
+                  if price is None:
+                      continue
 
-          # -----------------------------
-          # Dot送信（ログ付き）
-          # -----------------------------
-          def send_to_dot(title, message):
-              url = f"https://dot.mindreset.tech/api/authV2/open/device/{DOT_DEVICE_ID}/text"
+                  diff = (price - s["limit"]) * s["shares"]
+                  sign = "+" if diff > 0 else "-"
+                  lines.append(f"{sign}{int(abs(diff)/10000)}万円 {s['name']}")
 
-              # ★ 送信ログ（追加済み）
+              message = "\n".join(lines[:5])
+
+              title = f"{now}"
+
               print("\n--- [送信データ内容ログ] ───")
               print("■ タイトル:")
               print(title)
@@ -154,37 +98,9 @@ jobs:
               print(message)
               print("────────────────────────────\n")
 
-              payload = {
-                  "refreshNow": True,
-                  "title": title,
-                  "message": message
-              }
+              send(title, message,
+                   os.environ["QUOTE_DEVICE_ID"],
+                   os.environ["QUOTE_API_KEY"])
 
-              headers = {
-                  "Authorization": f"Bearer {DOT_API_KEY}",
-                  "Content-Type": "application/json"
-              }
-
-              res = requests.post(url, headers=headers, json=payload)
-
-              if res.status_code in (200, 201):
-                  print("送信結果: 成功")
-              else:
-                  print("送信結果: 失敗", res.status_code, res.text)
-
-          # -----------------------------
-          # メイン
-          # -----------------------------
-          def main():
-              stocks = load_stocks_config(CONFIG_FILE)
-
-              jst = pytz.timezone("Asia/Tokyo")
-              now = datetime.datetime.now(jst).strftime("%H:%M")
-
-              message, nikkei = get_stock_prices(stocks)
-
-              send_to_dot(f"{now}{nikkei}", message)
-
-          if __name__ == "__main__":
-              main()
+          main()
           EOF
