@@ -1,4 +1,4 @@
-name: Send Stock Price to Dot Device (FINAL STABLE)
+name: Send Stock Price to Dot Device (FINAL FIXED)
 
 on:
   schedule:
@@ -45,11 +45,10 @@ jobs:
               return stocks
 
           # -----------------------------
-          # Yahoo JSON（安定）
+          # 株価取得（Yahoo JSON 安定版）
           # -----------------------------
-          def get_price(code):
+          def get_price(symbol):
               try:
-                  symbol = f"{code}.T"
                   url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
 
                   headers = {
@@ -59,11 +58,21 @@ jobs:
                   r = requests.get(url, headers=headers, timeout=10)
                   data = r.json()
 
-                  return data["chart"]["result"][0]["meta"]["regularMarketPrice"]
+                  result = data.get("chart", {}).get("result")
+                  if not result:
+                      return None
+
+                  return result[0]["meta"].get("regularMarketPrice")
 
               except Exception as e:
-                  print("price error:", code, e)
+                  print("price error:", symbol, e)
                   return None
+
+          # -----------------------------
+          # 日経平均（安全版）
+          # -----------------------------
+          def get_nikkei():
+              return get_price("^N225")
 
           # -----------------------------
           # 送信
@@ -92,7 +101,7 @@ jobs:
               requests.post(url, headers=headers, json=payload)
 
           # -----------------------------
-          # メイン処理（修正版）
+          # メイン
           # -----------------------------
           def main():
               stocks = load_config()
@@ -102,31 +111,30 @@ jobs:
 
               results = []
 
-              # ★ 日経平均
-              nikkei = get_price("^N225")
+              # 日経平均
+              nikkei = get_nikkei()
               nikkei_text = ""
-              if nikkei:
+              if nikkei is not None:
                   nikkei_text = f" 日経:{int(nikkei):,}円"
 
               for s in stocks:
-                  price = get_price(s["code"])
+                  price = get_price(f"{s['code']}.T")
 
                   if price is None:
                       continue
 
                   diff = (price - s["limit"]) * s["shares"]
 
-                  # ★ -0対策（重要）
+                  # -0対策
                   if abs(diff) < 50:
                       diff = 0
 
                   results.append({
                       "name": s["name"],
-                      "diff": diff,
-                      "shares": s["shares"]
+                      "diff": diff
                   })
 
-              # ★ ソート修正（数値）
+              # ソート（数値で正しく）
               results.sort(key=lambda x: x["diff"], reverse=True)
 
               lines = []
@@ -137,7 +145,7 @@ jobs:
 
                   lines.append(f"{sign}{value}万円 {r['name']}")
 
-              # ★ 全滅対策
+              # 全滅対策
               if not lines:
                   lines = ["データ取得失敗"]
 
