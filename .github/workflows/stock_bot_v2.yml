@@ -2,19 +2,16 @@ name: Send Stock Price to Dot Device
 
 on:
   schedule:
-    # 平日の日本時間 09:00〜15:59（UTC 0–6）
-    - cron: '13 0-6 * * 1-5'
-    - cron: '23 0-6 * * 1-5'
-    - cron: '33 0-6 * * 1-5'
-    - cron: '43 0-6 * * 1-5'
-    - cron: '53 0-6 * * 1-5'
+    # 平日の日本時間 09:00〜15:59（UTC 0:00〜06:59）
+    # 他のユーザーと被りにくい「12分」「42分」に設定して遅延を緩和
+    - cron: '12 0-6 * * 1-5'
+    - cron: '42 0-6 * * 1-5'
   workflow_dispatch:
 
 concurrency:
   group: weekday-daytime-job
   cancel-in-progress: false
 
-# お天気コードと同じく、トップ階層で書き込み権限を安全に付与
 permissions:
   contents: write
 
@@ -230,14 +227,3 @@ jobs:
           if __name__ == "__main__":
               main()
           EOF
-
-      # 毎週月曜の最初の定期実行時に空コミットをして60日停止を完全に防ぐ
-      - name: Keepalive (Prevent 60 days suspend)
-        if: github.event_name == 'schedule' && github.event.cron == '17 0-6 * * 1-5'
-        run: |
-          if [ "$(date +%u)" -eq 1 ]; then
-            git config --global user.name "github-actions[bot]"
-            git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-            git commit --allow-empty -m "keepalive: prevent stock workflow suspension"
-            git push origin HEAD:${{ github.ref_name }}
-          fi
