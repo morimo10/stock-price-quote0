@@ -3,7 +3,6 @@ name: Send Stock Price to Dot Device
 on:
   schedule:
     # 平日の日本時間 09:00〜15:59（UTC 0:00〜06:59）
-    # 他のユーザーと被りにくい「12分」「42分」に設定して遅延を緩和
     - cron: '13 0-6 * * 1-5'
     - cron: '43 0-6 * * 1-5'
   workflow_dispatch:
@@ -23,15 +22,15 @@ jobs:
       - name: Checkout Repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python (with pip cache)
         uses: actions/setup-python@v5
         with:
           python-version: '3.x'
+          cache: 'pip'
 
       - name: Install Dependencies
         run: |
-          python -m pip install --upgrade pip
-          pip install requests pytz yfinance
+          pip install -r requirements.txt
 
       - name: Fetch and Send Stock Data
         env:
@@ -40,189 +39,139 @@ jobs:
         run: |
           python - << 'EOF'
           import os
+          import math
           import datetime
           import pytz
           import requests
           import unicodedata
-          import math
           import yfinance as yf
 
           CONFIG_FILE = "stocks.txt"
           DOT_API_KEY = os.environ.get("QUOTE_API_KEY")
           DOT_DEVICE_ID = os.environ.get("QUOTE_DEVICE_ID")
 
+          # -----------------------------
+          # 設定ファイル読み込み
+          # -----------------------------
           def load_stocks_config(filepath):
               config = {}
               if not os.path.exists(filepath):
-                  print(f"エラー: {filepath} が見つかりません。")
+                  print(f"エラー: {filepath} が見つかりません")
                   return config
-                  
+
               with open(filepath, "r", encoding="utf-8") as f:
                   for line in f:
                       line = line.strip()
                       if not line or line.startswith("#"):
                           continue
-                          
-                      parts = line.split(",")
-                      if len(parts) == 4:
-                          raw_code = parts[0].strip()
-                          ticker = raw_code if raw_code.endswith(".T") else f"{raw_code}.T"
-                          name = parts[1].strip()
-                          limit = float(parts[2].strip())
-                          try:
-                              shares = int(parts[3].strip())
-                          except ValueError:
-                              shares = 0
-                          config[ticker] = {"name": name, "limit": limit, "shares": shares}
+
+                      code, name, limit, shares = line.split(",")
+                      ticker = code if code.endswith(".T") else f"{code}.T"
+                      config[ticker] = {
+                          "name": name.strip(),
+                          "limit": float(limit),
+                          "shares": int(shares)
+                      }
               return config
 
+          # -----------------------------
+          # 全角幅考慮
+          # -----------------------------
           def get_display_width(text):
-              count = 0
+              width = 0
               for c in text:
-                  if unicodedata.east_asian_width(c) in 'FWA':
-                      count += 2
-                  else:
-                      count += 1
-              return count
+                  width += 2 if unicodedata.east_asian_width(c) in "FWA" else 1
+              return width
 
           def pad_text(text, target_width):
-              current_width = get_display_width(text)
-              padding_needed = target_width - current_width
-              if padding_needed > 0:
-                  return text + (" " * padding_needed)
-              return text
+              return text + " " * max(0, target_width - get_display_width(text))
 
-          def get_nikkei_change():
-              try:
-                  nikkei = yf.Ticker("^N225")
-                  hist = nikkei.history(period="5d")
-                  if len(hist) >= 2:
-                      current_price = hist['Close'].iloc[-1]
-                      prev_close = hist['Close'].iloc[-2]
-                      change = current_price - prev_close
-                      sign = "+" if change >= 0 else ""
-                      return f" 日経平均:{sign}{change:,.0f}円"
-              except Exception as e:
-                  print(f"日経平均の取得に失敗: {e}")
-              return ""
-
+          # -----------------------------
+          # 株価＋日経平均を一括取得（高速化）
+          # -----------------------------
           def get_stock_prices(stocks_config):
+              tickers = list(stocks_config.keys()) + ["^N225"]
+
+              data = yf.download(
+                  tickers=tickers,
+                  period="2d",
+                  threads=True,
+                  group_by="ticker",
+                  progress=False
+              )
+
               stocks_data = []
-              
-              for ticker, config in stocks_config.items():
-                  code = ticker.split('.')[0]
-                  name = config["name"]
-                  limit = config["limit"]
-                  shares = config["shares"]
-                  
+
+              for ticker, cfg in stocks_config.items():
                   try:
-                      stock = yf.Ticker(ticker)
-                      todays_data = stock.history(period="1d")
-                      
-                      if len(todays_data) >= 1:
-                          latest_price = todays_data['Close'].iloc[-1]
-                          diff_val = latest_price - limit
-                          total_diff = diff_val * shares
-                          total_diff_wan = math.floor(total_diff / 10000)
-                          
-                          if limit > 0:
-                              raw_ratio = (diff_val / limit) * 100
-                              if raw_ratio >= 0:
-                                  target_pct = math.floor(raw_ratio)
-                              else:
-                                  target_pct = math.ceil(raw_ratio)
-                          else:
-                              target_pct = 0
-                          
-                          stocks_data.append({
-                              "code": code,
-                              "name": name,
-                              "shares": shares,
-                              "diff_wan": total_diff_wan,
-                              "target_pct": target_pct,
-                              "is_error": False
-                          })
-                      else:
-                          stocks_data.append({"code": code, "name": name, "shares": shares, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "N/A"})
-                          
-                  except Exception as e:
-                      print(f"Error fetching {ticker}: {e}")
-                      stocks_data.append({"code": code, "name": name, "shares": shares, "diff_wan": 0, "target_pct": -999, "is_error": True, "error_msg": "Error"})
+                      df = data[ticker]
+                      latest = df["Close"].iloc[-1]
+                      diff = latest - cfg["limit"]
+                      total = diff * cfg["shares"]
+                      diff_wan = math.floor(total / 10000)
 
-              stocks_data.sort(key=lambda x: x["target_pct"], reverse=True)
-              
-              if len(stocks_data) > 5:
-                  stocks_data = stocks_data[:5]
-              
-              text_lines = []
-              for item in stocks_data:
-                  if item["is_error"]:
-                      err_label = pad_text(item['error_msg'], 7)
-                      padded_shares = f"{item['shares']:>4}"
-                      full_line_content = f" {err_label} ({padded_shares}) {item['name']}"
-                      line = pad_text(full_line_content, 37)
-                      text_lines.append(line)
-                  else:
-                      sign = "+" if item["diff_wan"] > 0 else ("-" if item["diff_wan"] < 0 else " ")
-                      abs_diff = abs(item["diff_wan"])
-                      diff_num_str = f"{abs_diff:>3}" if item["diff_wan"] != 0 else f"{0:>3}"
-                      diff_str = f"{sign}{diff_num_str}万円"
-                      padded_shares = f"{item['shares']:>4}"
-                      full_line_content = f" {diff_str} ({padded_shares}) {item['name']}"
-                      line = pad_text(full_line_content, 37)
-                      text_lines.append(line)
-                      
-              return "\n".join(text_lines)
+                      pct = (diff / cfg["limit"]) * 100 if cfg["limit"] > 0 else 0
+                      pct = math.floor(pct) if pct >= 0 else math.ceil(pct)
 
-          def send_to_dot_device(title, message):
+                      stocks_data.append({
+                          "name": cfg["name"],
+                          "shares": cfg["shares"],
+                          "diff_wan": diff_wan,
+                          "pct": pct
+                      })
+                  except Exception:
+                      stocks_data.append({
+                          "name": cfg["name"],
+                          "shares": cfg["shares"],
+                          "diff_wan": 0,
+                          "pct": -999
+                      })
+
+              stocks_data.sort(key=lambda x: x["pct"], reverse=True)
+              stocks_data = stocks_data[:5]
+
+              lines = []
+              for s in stocks_data:
+                  sign = "+" if s["diff_wan"] > 0 else "-" if s["diff_wan"] < 0 else " "
+                  diff = f"{sign}{abs(s['diff_wan']):>3}万円"
+                  line = f" {diff} ({s['shares']:>4}) {s['name']}"
+                  lines.append(pad_text(line, 37))
+
+              # 日経平均差分
+              nikkei = data["^N225"]["Close"]
+              nikkei_diff = nikkei.iloc[-1] - nikkei.iloc[-2]
+              nikkei_sign = "+" if nikkei_diff >= 0 else ""
+              nikkei_info = f" 日経平均:{nikkei_sign}{nikkei_diff:,.0f}円"
+
+              return "\n".join(lines), nikkei_info
+
+          # -----------------------------
+          # Dot デバイス送信
+          # -----------------------------
+          def send_to_dot(title, message):
               url = f"https://dot.mindreset.tech/api/authV2/open/device/{DOT_DEVICE_ID}/text"
-              
-              print("\n--- [送信データ内容ログ] ───")
-              print(f"■ タイトル:\n{title}")
-              print(f"■ メッセージ本文:\n{message}")
-              print("────────────────────────────\n")
-              
               payload = {
                   "refreshNow": True,
                   "title": title,
-                  "message": message,
-                  "styles": {
-                      "title": {
-                          "fontFamily": "ChillRoundGothic",
-                          "fontSize": 22
-                      },
-                      "message": {
-                          "fontFamily": "ChillRoundGothic"
-                      }
-                  }
+                  "message": message
               }
-              
               headers = {
                   "Authorization": f"Bearer {DOT_API_KEY}",
                   "Content-Type": "application/json"
               }
-              
-              response = requests.post(url, headers=headers, json=payload)
-              if response.status_code in [200, 201]:
-                  print(f"成功: {response.json().get('message')}")
-              else:
-                  print(f"エラー {response.status_code}: {response.text}")
+              r = requests.post(url, headers=headers, json=payload)
+              print("送信結果:", r.status_code)
 
           def main():
-              stocks_config = load_stocks_config(CONFIG_FILE)
-              if not stocks_config:
-                  print("設定データがありません。")
+              stocks = load_stocks_config(CONFIG_FILE)
+              if not stocks:
                   return
 
-              jst = pytz.timezone('Asia/Tokyo')
-              now_jst = datetime.datetime.now(jst)
-              time_str = now_jst.strftime("%H:%M")
-              
-              nikkei_info = get_nikkei_change()
-              title = f"{time_str}{nikkei_info}"
-              
-              message = get_stock_prices(stocks_config)
-              send_to_dot_device(title, message)
+              jst = pytz.timezone("Asia/Tokyo")
+              now = datetime.datetime.now(jst).strftime("%H:%M")
+
+              message, nikkei = get_stock_prices(stocks)
+              send_to_dot(f"{now}{nikkei}", message)
 
           if __name__ == "__main__":
               main()
