@@ -2,7 +2,6 @@ name: Keepalive Workflow
 
 on:
   schedule:
-    # 毎月1日と15日の UTC 12:00（日本時間 21:00）に実行（スキップ対策の月2回）
     - cron: '0 12 1,15 * *'
   workflow_dispatch:
 
