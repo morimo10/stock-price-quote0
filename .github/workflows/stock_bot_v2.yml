@@ -3,6 +3,7 @@ name: Send Stock Price to Dot Device (PRO FINAL)
 on:
   schedule:
     - cron: '13 0-6 * * 1-5'
+    - cron: '27 0-6 * * 1-5'
     - cron: '43 0-6 * * 1-5'
     - cron: '57 0-6 * * 1-5'
   workflow_dispatch:
