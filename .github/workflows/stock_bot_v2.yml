@@ -161,10 +161,12 @@ jobs:
               lines = []
 
               for r in results:
+                  # 符号の判定（プラス、マイナス、0の時は半角スペース）
                   sign = "+" if r["diff"] > 0 else "-" if r["diff"] < 0 else " "
                   value = int(abs(r["diff"]) / 10000)
 
-                  lines.append(f"{sign}{value}万円 {r['name']}")
+                  # :2d を指定して2桁固定（1桁の場合は左側を半角スペースで埋める）
+                  lines.append(f"{sign}{value:2d}万円 {r['name']}")
 
               if not lines:
                   lines = ["データ取得失敗"]
