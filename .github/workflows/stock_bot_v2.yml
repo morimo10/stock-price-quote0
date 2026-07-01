@@ -92,7 +92,7 @@ jobs:
                   diff = current - prev
                   sign = "+" if diff >= 0 else ""
 
-                  return f"日経:{sign}{int(diff):,}円"
+                  return f"日経平均:{sign}{int(diff):,}円"
 
               except:
                   return None
