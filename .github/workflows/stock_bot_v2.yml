@@ -127,13 +127,14 @@ jobs:
           # メイン
           # -----------------------------
           def main():
-              # 現在の日本時間を取得
+             # 現在の日本時間を取得
               jst = pytz.timezone("Asia/Tokyo")
               now_jst = datetime.datetime.now(jst)
 
-              # 17時以降（17:00を含む）なら何もせず終了
-              if now_jst.hour >= 17:
-                  print(f"現在の時刻は {now_jst.strftime('%H:%M')} です。17時以降のため実行をスキップします。")
+              # 9時以前 または 17時以降なら実行しない
+              # （9:00〜16:59 の間だけ動かす設定）
+              if now_jst.hour < 9 or now_jst.hour >= 17:
+                  print(f"現在は市場外の時間帯 ({now_jst.strftime('%H:%M')}) です。実行をスキップします。")
                   return
 
               stocks = load_config()
