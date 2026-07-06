@@ -17,8 +17,8 @@ jobs:
 
       - name: Run Stock Script
         env:
-          QUOTE_API_KEY: ${{ secrets.QUOTE_API_KEY2 }}
-          QUOTE_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_KEY2 }}
+          QUOTE_API_KEY: ${{ secrets.QUOTE_API_KEY }}
+          QUOTE_DEVICE_ID: ${{ secrets.QUOTE_DEVICE_KEY }}
         run: |
           python - << 'EOF'
           import os
