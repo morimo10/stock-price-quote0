@@ -110,10 +110,16 @@ jobs:
               print(message)
               print("────────────────────────────\n")
 
+              # マニュアルの仕様（styles -> title -> fontSize）に合わせてペイロードを構成
               payload = {
                   "refreshNow": True,
                   "title": title,
-                  "message": message
+                  "message": message,
+                  "styles": {
+                      "title": {
+                          "fontSize": 20  # タイトルのフォントサイズを小さく設定（必要に応じて数値を調整してください）
+                      }
+                  }
               }
 
               headers = {
