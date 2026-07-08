@@ -25,6 +25,7 @@ jobs:
           import requests
           import datetime
           import pytz
+          import math
 
           CONFIG_FILE = "stocks.txt"
 
@@ -110,14 +111,18 @@ jobs:
               print(message)
               print("────────────────────────────\n")
 
-              # マニュアルの仕様（styles -> title -> fontSize）に合わせてペイロードを構成
+              # stylesの中に title と message のフォントファミリー（ChillRoundGothic）を指定
               payload = {
                   "refreshNow": True,
                   "title": title,
                   "message": message,
                   "styles": {
                       "title": {
-                          "fontSize": 20  # タイトルのフォントサイズを小さく設定（必要に応じて数値を調整してください）
+                          "fontSize": 20,
+                          "fontFamily": "ChillRoundGothic"
+                      },
+                      "message": {
+                          "fontFamily": "ChillRoundGothic"
                       }
                   }
               }
@@ -159,14 +164,22 @@ jobs:
                       continue
 
                   diff = (price - s["limit"]) * s["shares"]
+                  
+                  # 増加率の計算 (ゼロ除算対策含む)
+                  if s["limit"] > 0:
+                      pct = ((price - s["limit"]) / s["limit"]) * 100
+                  else:
+                      pct = 0.0
 
                   # -0対策（完全）
                   if abs(diff) < 50:
                       diff = 0
+                      pct = 0.0
 
                   results.append({
                       "name": s["name"],
-                      "diff": diff
+                      "diff": diff,
+                      "pct": pct
                   })
 
               # 数値ソート
@@ -178,9 +191,12 @@ jobs:
                   # 符号の判定（プラス、マイナス、0の時は半角スペース）
                   sign = "+" if r["diff"] > 0 else "-" if r["diff"] < 0 else " "
                   value = int(abs(r["diff"]) / 10000)
+                  
+                  # 整数に切り捨て (正負に対応するため math.trunc を使用)
+                  pct_val = math.trunc(r["pct"])
 
-                  # :2d を指定して2桁固定（1桁の場合は左側を半角スペースで埋める）
-                  lines.append(f"{sign}{value:2d}万円 {r['name']}")
+                  # 増減額の横に、3桁右詰めのパーセンテージを括弧付きで追加
+                  lines.append(f"{sign}{value:2d}万円({pct_val:3d}%) {r['name']}")
 
               if not lines:
                   lines = ["データ取得失敗"]
