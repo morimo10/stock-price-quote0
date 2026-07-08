@@ -119,10 +119,10 @@ jobs:
                   "styles": {
                       "title": {
                           "fontSize": 20,
-                          "fontFamily": "ChillRoundGothic"
+                          "fontFamily": "ChillDuanSans"
                       },
                       "message": {
-                          "fontFamily": "ChillRoundGothic"
+                          "fontFamily": "ChillDuanSans"
                       }
                   }
               }
