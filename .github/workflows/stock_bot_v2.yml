@@ -142,6 +142,12 @@ jobs:
               jst = pytz.timezone("Asia/Tokyo")
               now_jst = datetime.datetime.now(jst)
 
+              # 【追加】土曜日(5) または 日曜日(6) なら実行しない
+              # weekday() は 月曜=0, 火曜=1, ..., 土曜=5, 日曜=6
+              if now_jst.weekday() >= 5:
+                  print(f"本日は週末 ({now_jst.strftime('%A')}) のため、実行をスキップします。")
+                  return
+
               # 9時以前 または 17時以降なら実行しない
               # （9:00〜16:59 の間だけ動かす設定）
               if now_jst.hour < 9 or now_jst.hour >= 17:
