@@ -15,6 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # 念のため stocks.txt が存在するか確認するステップを追加
+      - name: Check config file
+        run: |
+          if [ -f "stocks.txt" ]; then
+            echo "✅ stocks.txt が見つかりました。"
+          else
+            echo "❌ エラー: stocks.txt がリポジトリのルートに見つかりません！"
+            exit 1
+          fi
+
       - name: Run Stock Script
         env:
           QUOTE_API_KEY: ${{ secrets.QUOTE_API_KEY }}
@@ -26,6 +36,7 @@ jobs:
           import datetime
           import pytz
           import math
+          import sys
 
           CONFIG_FILE = "stocks.txt"
 
@@ -33,38 +44,50 @@ jobs:
           # 設定読み込み
           # -----------------------------
           def load_config():
+              print("ログ: stocks.txt の読み込みを開始します...")
               stocks = []
-              with open(CONFIG_FILE, "r", encoding="utf-8") as f:
-                  for line in f:
-                      if not line.strip() or line.startswith("#"):
-                          continue
-                      code, name, limit, shares = line.split(",")
-                      stocks.append({
-                          "code": code.strip(),
-                          "name": name.strip(),
-                          "limit": float(limit),
-                          "shares": int(shares)
-                      })
-              return stocks
+              try:
+                  with open(CONFIG_FILE, "r", encoding="utf-8") as f:
+                      for i, line in enumerate(f, 1):
+                          if not line.strip() or line.startswith("#"):
+                              continue
+                          parts = line.split(",")
+                          if len(parts) < 4:
+                              print(f"⚠️ 警告: stocks.txt の {i} 行目のフォーマットが不正です。スキップします。")
+                              continue
+                          code, name, limit, shares = parts[0:4]
+                          stocks.append({
+                              "code": code.strip(),
+                              "name": name.strip(),
+                              "limit": float(limit),
+                              "shares": int(shares)
+                          })
+                  print(f"ログ: {len(stocks)} 件の銘柄を読み込みました。")
+                  return stocks
+              except Exception as e:
+                  print(f"❌ エラー: stocks.txt の読み込み中に問題が発生しました: {e}")
+                  sys.exit(1)
 
           # -----------------------------
-          # 株価取得（安全版）
+          # 株価取得
           # -----------------------------
           def get_price(symbol):
               try:
                   url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
                   headers = {"User-Agent": "Mozilla/5.0"}
-
                   r = requests.get(url, headers=headers, timeout=10)
+                  
+                  if r.status_code != 200:
+                      print(f"⚠️ Yahoo Finance APIエラー ({symbol}): ステータスコード {r.status_code}")
+                      return None
+                      
                   data = r.json()
-
                   result = data.get("chart", {}).get("result")
                   if not result:
                       return None
-
                   return result[0]["meta"].get("regularMarketPrice")
-
-              except:
+              except Exception as e:
+                  print(f"⚠️ 株価取得中にエラー ({symbol}): {e}")
                   return None
 
           # -----------------------------
@@ -74,35 +97,35 @@ jobs:
               try:
                   url = "https://query1.finance.yahoo.com/v8/finance/chart/^N225"
                   headers = {"User-Agent": "Mozilla/5.0"}
-
                   r = requests.get(url, headers=headers, timeout=10)
                   data = r.json()
-
                   result = data.get("chart", {}).get("result")
                   if not result:
                       return None
-
                   meta = result[0].get("meta", {})
-
                   current = meta.get("regularMarketPrice")
                   prev = meta.get("chartPreviousClose")
-
                   if current is None or prev is None:
                       return None
-
                   diff = current - prev
                   sign = "+" if diff >= 0 else ""
-
                   return f"日経平均:{sign}{int(diff):,}円"
-
-              except:
+              except Exception as e:
+                  print(f"⚠️ 日経平均取得中にエラー: {e}")
                   return None
 
           # -----------------------------
           # 送信
           # -----------------------------
           def send(title, message):
-              url = f"https://dot.mindreset.tech/api/authV2/open/device/{os.environ['QUOTE_DEVICE_ID']}/text"
+              device_id = os.environ.get('QUOTE_DEVICE_ID')
+              api_key = os.environ.get('QUOTE_API_KEY')
+              
+              if not device_id or not api_key:
+                  print("❌ エラー: GitHub Secrets (QUOTE_API_KEY または QUOTE_DEVICE_KEY) が設定されていないか、環境変数が空です。")
+                  return
+
+              url = f"https://dot.mindreset.tech/api/authV2/open/device/{device_id}/text"
 
               print("\n--- [送信データ内容ログ] ───")
               print("■ タイトル:")
@@ -111,104 +134,80 @@ jobs:
               print(message)
               print("────────────────────────────\n")
 
-              # stylesの中に title と message のフォントファミリー（ChillRoundGothic）を指定
               payload = {
                   "refreshNow": True,
                   "title": title,
                   "message": message,
                   "styles": {
-                      "title": {
-                          "fontSize": 20,
-                          "fontFamily": "ChillDuanSans"
-                      },
-                      "message": {
-                          "fontFamily": "ChillDuanSans"
-                      }
+                      "title": {"fontSize": 20, "fontFamily": "ChillDuanSans"},
+                      "message": {"fontFamily": "ChillDuanSans"}
                   }
               }
-
               headers = {
-                  "Authorization": f"Bearer {os.environ['QUOTE_API_KEY']}",
+                  "Authorization": f"Bearer {api_key}",
                   "Content-Type": "application/json"
               }
-
-              requests.post(url, headers=headers, json=payload)
+              try:
+                  res = requests.post(url, headers=headers, json=payload, timeout=10)
+                  print(f"ログ: API送信ステータスコード: {res.status_code}")
+                  print(f"ログ: APIレスポンス: {res.text}")
+              except Exception as e:
+                  print(f"❌ API送信中に通信エラーが発生しました: {e}")
 
           # -----------------------------
           # メイン
           # -----------------------------
           def main():
-             # 現在の日本時間を取得
+              print("ログ: スクリプトを開始しました。")
               jst = pytz.timezone("Asia/Tokyo")
               now_jst = datetime.datetime.now(jst)
+              print(f"ログ: 現在の日本時間: {now_jst.strftime('%Y-%m-%d %H:%M:%S')}")
 
-              # 【追加】土曜日(5) または 日曜日(6) なら実行しない
-              # weekday() は 月曜=0, 火曜=1, ..., 土曜=5, 日曜=6
               if now_jst.weekday() >= 5:
                   print(f"本日は週末 ({now_jst.strftime('%A')}) のため、実行をスキップします。")
                   return
 
-              # 9時以前 または 17時以降なら実行しない
-              # （9:00〜16:59 の間だけ動かす設定）
               if now_jst.hour < 9 or now_jst.hour >= 17:
                   print(f"現在は市場外の時間帯 ({now_jst.strftime('%H:%M')}) です。実行をスキップします。")
                   return
 
               stocks = load_config()
-              now = now_jst.strftime("%H:%M")
+              if not stocks:
+                  print("⚠️ 処理する銘柄がありません。終了します。")
+                  return
 
-              # 日経
+              now = now_jst.strftime("%H:%M")
               nikkei = get_nikkei_change()
               nikkei_text = nikkei if nikkei else ""
 
               results = []
-
               for s in stocks:
                   price = get_price(f"{s['code']}.T")
-
                   if price is None:
+                      print(f"⚠️ {s['name']} ({s['code']}) の株価が取得できませんでした。")
                       continue
 
                   diff = (price - s["limit"]) * s["shares"]
-                  
-                  # 増加率の計算 (ゼロ除算対策含む)
-                  if s["limit"] > 0:
-                      pct = ((price - s["limit"]) / s["limit"]) * 100
-                  else:
-                      pct = 0.0
+                  pct = ((price - s["limit"]) / s["limit"]) * 100 if s["limit"] > 0 else 0.0
 
-                  # -0対策（完全）
                   if abs(diff) < 50:
                       diff = 0
                       pct = 0.0
 
-                  results.append({
-                      "name": s["name"],
-                      "diff": diff,
-                      "pct": pct
-                  })
+                  results.append({"name": s["name"], "diff": diff, "pct": pct})
 
-              # 数値ソート
               results.sort(key=lambda x: x["diff"], reverse=True)
-
               lines = []
-
               for r in results:
-                  # 符号の判定（プラス、マイナス、0の時は半角スペース）
                   sign = "+" if r["diff"] > 0 else "-" if r["diff"] < 0 else " "
                   value = int(abs(r["diff"]) / 10000)
-                  
-                  # 整数に切り捨て (正負に対応するため math.trunc を使用)
                   pct_val = math.trunc(r["pct"])
-
-                  # 増減額の横に、3桁右詰めのパーセンテージを括弧付きで追加
                   lines.append(f"{sign}{value:2d}万円({pct_val:3d}%) {r['name']}")
 
               if not lines:
                   lines = ["データ取得失敗"]
 
               message = "\n".join(lines[:5])
-
               send(f"{now} {nikkei_text}".strip(), message)
 
           main()
