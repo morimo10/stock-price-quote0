@@ -1,0 +1,36 @@
+name: Delete Old Workflow Runs
+
+on:
+  schedule:
+    # 毎日 03:00 UTC（日本時間 12:00）
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  actions: write
+
+jobs:
+  delete-old-runs:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Delete workflow runs older than 1 day
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          LIMIT_DATE=$(date -u -d "1 day ago" +"%Y-%m-%dT%H:%M:%SZ")
+          echo "Delete runs older than: $LIMIT_DATE"
+
+          gh api \
+            repos/${{ github.repository }}/actions/runs \
+            --paginate \
+            --jq '.workflow_runs[] | "\(.id) \(.created_at)"' |
+          while read RUN_ID CREATED_AT
+          do
+            if [[ "$CREATED_AT" < "$LIMIT_DATE" ]]; then
+              echo "Deleting Run ID: $RUN_ID ($CREATED_AT)"
+              gh api \
+                --method DELETE \
+                repos/${{ github.repository }}/actions/runs/$RUN_ID || true
+            fi
+          done
